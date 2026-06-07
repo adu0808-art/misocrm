@@ -2,10 +2,22 @@ const path = require('path');
 const fs = require('fs');
 const Database = require('better-sqlite3');
 
+// 로컬 dev:   DB_DIR = ../db, DB_PATH = ../db/crm.db
+// Railway 등 운영: DB_PATH env로 볼륨 경로 지정 (예: /data/crm.db)
 const DB_DIR = path.join(__dirname, '..', 'db');
-const DB_PATH = path.join(DB_DIR, 'crm.db');
+const SEED_PATH = path.join(DB_DIR, 'initial.db');
+const DB_PATH = process.env.DB_PATH || path.join(DB_DIR, 'crm.db');
 
-if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
+// 운영 환경 디렉터리 자동 생성
+const liveDir = path.dirname(DB_PATH);
+if (!fs.existsSync(liveDir)) fs.mkdirSync(liveDir, { recursive: true });
+if (!fs.existsSync(DB_DIR))  fs.mkdirSync(DB_DIR, { recursive: true });
+
+// 부트스트랩: 운영 DB 파일이 없고 seed가 있으면 초기 데이터로 복사
+if (!fs.existsSync(DB_PATH) && fs.existsSync(SEED_PATH)) {
+  fs.copyFileSync(SEED_PATH, DB_PATH);
+  console.log(`[Bootstrap] 초기 DB 복사: ${SEED_PATH} → ${DB_PATH}`);
+}
 
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');

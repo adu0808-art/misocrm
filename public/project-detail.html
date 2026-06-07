@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>프로젝트 상세 | MISO CRM</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app">
+  <main class="main">
+    <div class="content">
+      <div class="card">
+        <div class="card-body">
+          <div class="flex-between mb-8">
+            <div>
+              <div class="text-muted" style="font-size:12px">프로젝트 코드</div>
+              <div style="font-size:18px; font-weight:700;" id="projTitle">로딩 중...</div>
+            </div>
+            <div class="flex gap-8">
+              <a class="btn btn-outline" href="projects.html">← 목록</a>
+              <button class="btn btn-primary" id="saveBtn">저장</button>
+            </div>
+          </div>
+          <div class="status-flow" id="statusFlow"></div>
+        </div>
+      </div>
+
+      <div class="tabs" id="detailTabs">
+        <button class="tab active" data-tab="basic">기본정보</button>
+        <button class="tab" data-tab="solutions">솔루션 납품</button>
+        <button class="tab" data-tab="sales">매출 / 채권</button>
+        <button class="tab" data-tab="purchases">매입 / 지급</button>
+        <button class="tab" data-tab="resources">투입내역</button>
+        <button class="tab" data-tab="activities">활동이력</button>
+        <button class="tab" data-tab="schedule">일정</button>
+        <button class="tab" data-tab="summary">손익요약</button>
+      </div>
+
+      <div class="tab-panel active" id="tab-basic"></div>
+      <div class="tab-panel" id="tab-solutions"></div>
+      <div class="tab-panel" id="tab-sales"></div>
+      <div class="tab-panel" id="tab-purchases"></div>
+      <div class="tab-panel" id="tab-resources"></div>
+      <div class="tab-panel" id="tab-activities"></div>
+      <div class="tab-panel" id="tab-schedule"></div>
+      <div class="tab-panel" id="tab-summary"></div>
+    </div>
+  </main>
+</div>
+<script src="js/common.js"></script>
+<script src="js/project-detail.js"></script>
+</body>
+</html>

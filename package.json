@@ -1,0 +1,15 @@
+{
+  "name": "miso-crm",
+  "version": "1.0.0",
+  "description": "MISO CRM - 프로젝트/매출/영업목표 관리 시스템",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js",
+    "seed": "node server/seed.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "express": "^4.19.2"
+  }
+}

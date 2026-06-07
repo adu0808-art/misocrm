@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>프로젝트 관리 | MISO CRM</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app">
+  <main class="main">
+    <div class="content">
+      <!-- 조회 조건 (상단 고정) -->
+      <div class="card">
+        <div class="card-header">
+          <h2>조회조건</h2>
+          <div class="filter-actions">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;"><input type="checkbox" id="f_has_tx" style="width:auto;"> 당해 매출/매입 있음만</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;"><input type="checkbox" id="f_sw_only" style="width:auto;"> 소프트웨어실적등록 (only)</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;"><input type="checkbox" id="f_excl_internal" checked style="width:auto;"> 내부개발(프로젝트유형) 제외</label>
+            <button class="btn btn-success" id="searchBtn">조회</button>
+            <button class="btn" id="resetBtn">초기화</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="filter-grid">
+            <label>기준년도</label><div id="ss_year"></div>
+            <label>영업담당</label><div id="ss_sales"></div>
+            <label>소개경로</label><input id="f_intro" placeholder="소개경로">
+            <label>&nbsp;</label><span></span>
+
+            <label>프로젝트 코드</label><input id="f_code" placeholder="프로젝트 코드">
+            <label>주관본부</label><div id="ss_div"></div>
+            <label>사업담당</label><div id="ss_mgr"></div>
+            <label>수행PM</label><div id="ss_pm"></div>
+
+            <label>납품솔루션</label><div id="ss_sol"></div>
+            <label>참여형태</label><div id="ptype_radios" style="display:flex;gap:14px;align-items:center;flex-wrap:wrap;"></div>
+            <label>고객사</label><input id="f_cust" placeholder="고객사">
+            <label>프로젝트명</label><input id="f_name" placeholder="프로젝트명">
+
+            <label>프로젝트 유형</label><div class="full" id="f_types_wrap" style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 조회결과 -->
+      <div class="card">
+        <div class="card-header" style="flex-wrap:wrap;gap:12px;">
+          <div class="status-chips" id="statusChips">
+            <span class="text-muted" style="font-size:12px;font-weight:600;margin-right:4px;">조회결과</span>
+          </div>
+          <div class="filter-actions">
+            <button class="btn" id="favBtn">⭐ 즐겨찾기</button>
+            <button class="btn" id="periodBtn">📅 사업시기</button>
+            <button class="btn" id="dlBtn">영업현황 다운로드</button>
+            <button class="btn" id="colSettingsBtn" title="컬럼 표시/순서 설정">⚙ 컬럼 설정</button>
+            <button class="btn" id="resetColsBtn" title="컬럼 폭/순서 초기화">초기화</button>
+            <button class="btn btn-primary" id="addBtn">+ 영업현황 등록</button>
+          </div>
+        </div>
+        <div id="projTable"></div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="js/common.js"></script>
+<script src="js/components.js"></script>
+<script src="js/projects.js"></script>
+</body>
+</html>

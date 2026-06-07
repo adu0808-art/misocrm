@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>대시보드 | MISO CRM</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="app">
+  <main class="main">
+    <div class="content">
+      <div class="card">
+        <div class="card-header">
+          <h2>경영 대시보드</h2>
+          <div class="flex gap-8" style="align-items:center;">
+            <label class="text-muted" style="font-size:12px;">기준 연도</label>
+            <select id="yearSel" style="width:auto;"></select>
+            <label class="text-muted" style="font-size:12px;margin-left:8px;">화폐 단위</label>
+            <select id="unitSel" style="width:auto;">
+              <option value="원">원</option>
+              <option value="천원">천원</option>
+              <option value="만원">만원</option>
+              <option value="백만원">백만원</option>
+              <option value="억원" selected>억원</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="stats-grid" id="kpiCards"></div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>본부별 영업목표 / 매출이익 / 영업이익 현황</h3>
+          <button class="btn btn-sm" id="divColsBtn">⚙ 컬럼 설정</button>
+        </div>
+        <div class="card-body">
+          <div class="table-wrap"><table class="data" id="divTable">
+            <thead id="divThead"></thead>
+            <tbody id="divTbody"></tbody>
+            <tfoot id="divTfoot"></tfoot>
+          </table></div>
+          <div class="text-muted mt-8" style="font-size:11px;">
+            * 매출/매입은 <strong>수주완료 프로젝트</strong>의 매출/매입 입력 중 <strong>계산서 발행일자가 해당 연도</strong>인 합계입니다.
+            매출이익 = 매출 − 매입, 매출이익목표 = 이익목표 + 판관비 + 공통비, 영업이익 = 매출이익 − 판관비 − 공통비.
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3>월별 매출 추이</h3></div>
+        <div class="card-body"><div class="chart-wrap"><canvas id="chartMonthly"></canvas></div></div>
+      </div>
+
+      <div class="stats-grid" style="grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));">
+        <div class="card">
+          <div class="card-header"><h3>다가오는 제안 마감</h3></div>
+          <div class="card-body" id="upcomingProposals"></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>미수금 현황</h3></div>
+          <div class="card-body" id="upcomingUnpaid"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="js/common.js"></script>
+<script src="js/dashboard.js"></script>
+</body>
+</html>

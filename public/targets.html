@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>영업목표 / 판관비 | MISO CRM</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app">
+  <main class="main">
+    <div class="content">
+      <div class="card">
+        <div class="card-header">
+          <h2>연도별 영업목표 / 판관비 / 공통비</h2>
+          <div class="flex gap-8">
+            <label class="text-muted" style="margin-right:6px;align-self:center;">연도</label>
+            <select id="yearSel" style="width:auto;"></select>
+            <button class="btn btn-primary" id="saveAll">전체 저장</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div class="text-muted mb-16" style="font-size:12px;">
+            * 본부별로 연간 매출목표 / 이익목표 / 판매관리비 / 공통비를 입력합니다.
+            영업이익은 <strong>매출 − 매입 − 판매관리비 − 공통비</strong>로 계산되며, 대시보드에서 달성률을 확인할 수 있습니다.
+          </div>
+          <div class="table-wrap"><table class="data" id="tgtTable">
+            <thead><tr>
+              <th>본부</th>
+              <th class="num">매출목표(원)</th>
+              <th class="num">이익목표(원)</th>
+              <th class="num">판매관리비(원)</th>
+              <th class="num">공통비(원)</th>
+              <th class="num">매출이익목표(원)</th>
+              <th>월별</th>
+              <th>메모</th>
+            </tr></thead>
+            <tbody id="tgtTbody"></tbody>
+            <tfoot id="tgtTfoot"></tfoot>
+          </table></div>
+          <div class="text-muted mt-8" style="font-size:11px;">
+            ※ <strong>판매관리비/공통비</strong>는 월별 입력의 자동 합계입니다. 📅 월별 버튼으로 12개월 데이터를 입력하세요.
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="js/common.js"></script>
+<script src="js/targets.js"></script>
+</body>
+</html>

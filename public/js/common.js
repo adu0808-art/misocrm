@@ -2,7 +2,8 @@
 
 const NAV = [
   { section: '현황', items: [
-    { href: 'index.html', label: '대시보드' }
+    { href: 'index.html', label: '대시보드' },
+    { href: 'cashflow.html', label: '자금현황' }
   ]},
   { section: '영업/프로젝트', items: [
     { href: 'projects.html', label: '프로젝트 관리' },

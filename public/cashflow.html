@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>자금현황 | MISO CRM</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="app">
+  <main class="main">
+    <div class="content">
+      <div class="card">
+        <div class="card-header">
+          <h2>자금현황 <small class="text-muted" style="font-weight:400;font-size:12px;">수주완료 프로젝트 기준 · <span id="todayLabel"></span></small></h2>
+          <div class="flex gap-8" style="align-items:center;">
+            <label class="text-muted" style="font-size:12px;">화폐 단위</label>
+            <select id="unitSel" style="width:auto;">
+              <option value="원">원</option>
+              <option value="만원">만원</option>
+              <option value="백만원">백만원</option>
+              <option value="억원" selected>억원</option>
+            </select>
+            <button class="btn" id="refreshBtn">새로고침</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- KPI -->
+      <div class="stats-grid" id="kpiCards"></div>
+
+      <!-- 월별 현금흐름 -->
+      <div class="card">
+        <div class="card-header"><h3>월별 현금흐름 (입금예정 vs 지급예정)</h3></div>
+        <div class="card-body">
+          <div class="chart-wrap"><canvas id="cfChart"></canvas></div>
+        </div>
+      </div>
+
+      <div class="stats-grid" style="grid-template-columns: 1fr 1fr;">
+        <!-- 월별 표 -->
+        <div class="card">
+          <div class="card-header"><h3>월별 상세</h3></div>
+          <div class="card-body" style="padding:0;">
+            <div class="table-wrap" style="max-height:340px;overflow:auto;"><table class="data">
+              <thead><tr><th>월</th><th class="num">들어올 돈</th><th class="num">나갈 돈</th><th class="num">순액</th><th class="num">누적</th></tr></thead>
+              <tbody id="monthlyBody"></tbody>
+            </table></div>
+          </div>
+        </div>
+        <!-- 본부별 -->
+        <div class="card">
+          <div class="card-header"><h3>본부별 현황</h3></div>
+          <div class="card-body" style="padding:0;">
+            <div class="table-wrap" style="max-height:340px;overflow:auto;"><table class="data">
+              <thead><tr><th>본부</th><th class="num">받을 돈</th><th class="num">줄 돈</th><th class="num">순액</th></tr></thead>
+              <tbody id="divBody"></tbody>
+            </table></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 상세 목록 (받을/줄 돈) -->
+      <div class="card">
+        <div class="card-header" style="flex-wrap:wrap;gap:10px;">
+          <div class="tabs" id="detailTabs" style="margin:0;border:none;">
+            <button class="tab active" data-d="recv">받을 돈 (미수금)</button>
+            <button class="tab" data-d="pay">줄 돈 (미지급)</button>
+          </div>
+          <div class="flex gap-8" style="align-items:center;">
+            <select id="fltDiv" style="width:auto;"><option value="">전체 본부</option></select>
+            <label style="display:flex;align-items:center;gap:5px;font-size:12px;"><input type="checkbox" id="fltOverdue" style="width:auto;"> 연체만</label>
+          </div>
+        </div>
+        <div class="card-body" style="padding:0;">
+          <div class="table-wrap"><table class="data" id="detailTable">
+            <thead id="detailHead"></thead>
+            <tbody id="detailBody"></tbody>
+            <tfoot id="detailFoot"></tfoot>
+          </table></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="js/common.js"></script>
+<script src="js/cashflow.js"></script>
+</body>
+</html>

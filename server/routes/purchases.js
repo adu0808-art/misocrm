@@ -24,6 +24,13 @@ router.put('/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// 실지급여부 빠른 토글 (자금현황에서 사용)
+router.patch('/:id/paid', (req, res) => {
+  const paid = req.body.paid === 'Y' ? 'Y' : 'N';
+  db.prepare('UPDATE project_purchases SET paid=? WHERE id=?').run(paid, req.params.id);
+  res.json({ ok: true });
+});
+
 router.delete('/:id', (req, res) => {
   db.prepare('DELETE FROM project_purchases WHERE id=?').run(req.params.id);
   res.json({ ok: true });

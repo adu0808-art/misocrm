@@ -50,6 +50,7 @@ app.use('/api/activities', require('./routes/activities'));
 app.use('/api/targets', require('./routes/targets'));
 app.use('/api/expenses', require('./routes/expenses'));
 app.use('/api/dashboard', require('./routes/dashboard'));
+app.use('/api/cashflow', require('./routes/cashflow'));
 app.use('/api/bizno', require('./routes/bizno'));
 app.use('/api/nts', require('./routes/nts'));
 

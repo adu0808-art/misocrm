@@ -24,6 +24,15 @@ router.put('/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// 입금여부 빠른 토글 (자금현황에서 사용)
+router.patch('/:id/paid', (req, res) => {
+  const paid = req.body.paid === 'Y' ? 'Y' : 'N';
+  // 입금 완료 시 미청구잔액 0으로
+  if (paid === 'Y') db.prepare('UPDATE project_sales SET paid=?, unpaid_balance=0 WHERE id=?').run(paid, req.params.id);
+  else db.prepare('UPDATE project_sales SET paid=? WHERE id=?').run(paid, req.params.id);
+  res.json({ ok: true });
+});
+
 router.delete('/:id', (req, res) => {
   db.prepare('DELETE FROM project_sales WHERE id=?').run(req.params.id);
   res.json({ ok: true });

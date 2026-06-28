@@ -1,6 +1,8 @@
 renderLayout('자금현황');
 
 let unit = localStorage.getItem('miso_cashflow_unit') || '억원';
+let selectedYear = '';   // '' = 전체
+let yearsLoaded = false;
 let chart = null;
 let curDetail = 'recv';
 let summaryCache = null;
@@ -11,6 +13,7 @@ async function init() {
   const unitSel = document.getElementById('unitSel');
   unitSel.value = unit;
   unitSel.onchange = () => { unit = unitSel.value; localStorage.setItem('miso_cashflow_unit', unit); render(); loadDetail(); };
+  document.getElementById('yearSel').onchange = (e) => { selectedYear = e.target.value; load(); };
   document.getElementById('refreshBtn').onclick = load;
 
   document.querySelectorAll('#detailTabs .tab').forEach(t => t.onclick = () => {
@@ -33,8 +36,18 @@ async function init() {
 }
 
 async function load() {
-  summaryCache = await api.get('/api/cashflow/summary');
-  document.getElementById('todayLabel').textContent = '기준일 ' + summaryCache.today;
+  const q = selectedYear ? ('?year=' + selectedYear) : '';
+  summaryCache = await api.get('/api/cashflow/summary' + q);
+  document.getElementById('todayLabel').textContent = '기준일 ' + summaryCache.today +
+    (selectedYear ? ' · ' + selectedYear + '년' : ' · 전체 기간');
+  // 연도 셀렉트 채우기 (최초 1회)
+  if (!yearsLoaded && Array.isArray(summaryCache.years)) {
+    const sel = document.getElementById('yearSel');
+    sel.innerHTML = '<option value="">전체</option>' +
+      summaryCache.years.map(y => `<option value="${y}">${y}년</option>`).join('');
+    sel.value = selectedYear;
+    yearsLoaded = true;
+  }
   render();
   loadDetail();
 }
@@ -139,6 +152,7 @@ async function loadDetail() {
   const p = new URLSearchParams();
   if (divId) p.set('division_id', divId);
   if (overdue) p.set('overdue', '1');
+  if (selectedYear) p.set('year', selectedYear);
   const endpoint = curDetail === 'recv' ? 'receivables' : 'payables';
   const data = await api.get('/api/cashflow/' + endpoint + '?' + p);
   if (curDetail === 'recv') renderReceivables(data);

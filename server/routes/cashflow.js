@@ -21,9 +21,25 @@ const PURC_BASE = `
   LEFT JOIN divisions d ON p.division_id = d.id
   WHERE p.status = '${WON_STATUS}'`;
 
-// 요약: KPI + 월별 + 본부별
+// 선택 가능한 연도 목록 (미수/미지급의 결제예정일 기준)
+function availableYears() {
+  const rows = db.prepare(`
+    SELECT DISTINCT y FROM (
+      SELECT substr(s.payment_due_date,1,4) AS y ${SALES_BASE} AND s.paid='N' AND s.payment_due_date IS NOT NULL AND s.payment_due_date != ''
+      UNION
+      SELECT substr(pu.payment_due_date,1,4) AS y ${PURC_BASE} AND pu.paid='N' AND pu.payment_due_date IS NOT NULL AND pu.payment_due_date != ''
+    ) WHERE y IS NOT NULL AND y != '' ORDER BY y DESC
+  `).all();
+  return rows.map(r => Number(r.y)).filter(Boolean);
+}
+
+// 요약: KPI + 월별 + 본부별  (year 선택 시 결제예정일 연도 기준 필터)
 router.get('/summary', (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
+  const year = req.query.year ? String(parseInt(req.query.year, 10)) : '';
+  // 연도 필터 조건 (선택 시: 결제예정일 연도 일치)
+  const sYear = year ? ` AND substr(s.payment_due_date,1,4) = '${year}'` : '';
+  const pYear = year ? ` AND substr(pu.payment_due_date,1,4) = '${year}'` : '';
 
   // ---- KPI ----
   const recv = db.prepare(`
@@ -31,7 +47,7 @@ router.get('/summary', (req, res) => {
       COALESCE(SUM(s.sales_amount),0) AS total,
       COALESCE(SUM(CASE WHEN s.payment_due_date IS NOT NULL AND s.payment_due_date < ? THEN s.sales_amount ELSE 0 END),0) AS overdue,
       COUNT(*) AS cnt
-    ${SALES_BASE} AND s.paid='N'
+    ${SALES_BASE} AND s.paid='N'${sYear}
   `).get(today);
 
   const pay = db.prepare(`
@@ -39,22 +55,24 @@ router.get('/summary', (req, res) => {
       COALESCE(SUM(pu.purchase_amount),0) AS total,
       COALESCE(SUM(CASE WHEN pu.payment_due_date IS NOT NULL AND pu.payment_due_date < ? THEN pu.purchase_amount ELSE 0 END),0) AS overdue,
       COUNT(*) AS cnt
-    ${PURC_BASE} AND pu.paid='N'
+    ${PURC_BASE} AND pu.paid='N'${pYear}
   `).get(today);
 
-  // 누적 실적 (이미 들어온/나간)
-  const recvDone = db.prepare(`SELECT COALESCE(SUM(s.sales_amount),0) AS total ${SALES_BASE} AND s.paid='Y'`).get();
-  const payDone  = db.prepare(`SELECT COALESCE(SUM(pu.purchase_amount),0) AS total ${PURC_BASE} AND pu.paid='Y'`).get();
+  // 누적 실적 (이미 들어온/나간) - 입금/지급일이 없으니 발행일자 연도 기준
+  const sDoneYear = year ? ` AND substr(s.invoice_date,1,4) = '${year}'` : '';
+  const pDoneYear = year ? ` AND substr(pu.invoice_date,1,4) = '${year}'` : '';
+  const recvDone = db.prepare(`SELECT COALESCE(SUM(s.sales_amount),0) AS total ${SALES_BASE} AND s.paid='Y'${sDoneYear}`).get();
+  const payDone  = db.prepare(`SELECT COALESCE(SUM(pu.purchase_amount),0) AS total ${PURC_BASE} AND pu.paid='Y'${pDoneYear}`).get();
 
   // ---- 월별 현금흐름 (미수/미지급, 예정일 기준) ----
   const recvMonthly = db.prepare(`
     SELECT substr(s.payment_due_date,1,7) AS ym, COALESCE(SUM(s.sales_amount),0) AS amount, COUNT(*) AS cnt
-    ${SALES_BASE} AND s.paid='N' AND s.payment_due_date IS NOT NULL AND s.payment_due_date != ''
+    ${SALES_BASE} AND s.paid='N' AND s.payment_due_date IS NOT NULL AND s.payment_due_date != ''${sYear}
     GROUP BY ym
   `).all();
   const payMonthly = db.prepare(`
     SELECT substr(pu.payment_due_date,1,7) AS ym, COALESCE(SUM(pu.purchase_amount),0) AS amount, COUNT(*) AS cnt
-    ${PURC_BASE} AND pu.paid='N' AND pu.payment_due_date IS NOT NULL AND pu.payment_due_date != ''
+    ${PURC_BASE} AND pu.paid='N' AND pu.payment_due_date IS NOT NULL AND pu.payment_due_date != ''${pYear}
     GROUP BY ym
   `).all();
 
@@ -84,14 +102,14 @@ router.get('/summary', (req, res) => {
     SELECT d.id AS division_id, d.name AS division_name,
       COALESCE(SUM(s.sales_amount),0) AS amount, COUNT(*) AS cnt,
       COALESCE(SUM(CASE WHEN s.payment_due_date < ? THEN s.sales_amount ELSE 0 END),0) AS overdue
-    ${SALES_BASE} AND s.paid='N'
+    ${SALES_BASE} AND s.paid='N'${sYear}
     GROUP BY d.id
   `).all(today);
   const payDiv = db.prepare(`
     SELECT d.id AS division_id, d.name AS division_name,
       COALESCE(SUM(pu.purchase_amount),0) AS amount, COUNT(*) AS cnt,
       COALESCE(SUM(CASE WHEN pu.payment_due_date < ? THEN pu.purchase_amount ELSE 0 END),0) AS overdue
-    ${PURC_BASE} AND pu.paid='N'
+    ${PURC_BASE} AND pu.paid='N'${pYear}
     GROUP BY d.id
   `).all(today);
 
@@ -108,6 +126,8 @@ router.get('/summary', (req, res) => {
 
   res.json({
     today,
+    year: year ? Number(year) : null,
+    years: availableYears(),
     kpi: {
       receivable: recv.total, receivable_cnt: recv.cnt, receivable_overdue: recv.overdue,
       payable: pay.total, payable_cnt: pay.cnt, payable_overdue: pay.overdue,
@@ -121,11 +141,12 @@ router.get('/summary', (req, res) => {
 
 // 미수금 상세 목록 (받을 돈)
 router.get('/receivables', (req, res) => {
-  const { division_id, ym, overdue } = req.query;
+  const { division_id, ym, overdue, year } = req.query;
   const today = new Date().toISOString().slice(0, 10);
   const cond = [];
   const params = [];
   if (division_id) { cond.push('p.division_id = ?'); params.push(division_id); }
+  if (year) { cond.push("substr(s.payment_due_date,1,4) = ?"); params.push(String(parseInt(year,10))); }
   if (ym) { cond.push("substr(s.payment_due_date,1,7) = ?"); params.push(ym); }
   if (overdue === '1') { cond.push("s.payment_due_date < ?"); params.push(today); }
   const extra = cond.length ? ' AND ' + cond.join(' AND ') : '';
@@ -145,11 +166,12 @@ router.get('/receivables', (req, res) => {
 
 // 미지급 상세 목록 (줄 돈)
 router.get('/payables', (req, res) => {
-  const { division_id, ym, overdue } = req.query;
+  const { division_id, ym, overdue, year } = req.query;
   const today = new Date().toISOString().slice(0, 10);
   const cond = [];
   const params = [];
   if (division_id) { cond.push('p.division_id = ?'); params.push(division_id); }
+  if (year) { cond.push("substr(pu.payment_due_date,1,4) = ?"); params.push(String(parseInt(year,10))); }
   if (ym) { cond.push("substr(pu.payment_due_date,1,7) = ?"); params.push(ym); }
   if (overdue === '1') { cond.push("pu.payment_due_date < ?"); params.push(today); }
   const extra = cond.length ? ' AND ' + cond.join(' AND ') : '';

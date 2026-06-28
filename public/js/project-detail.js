@@ -31,6 +31,36 @@ async function init() {
   });
 
   document.getElementById('saveBtn').onclick = saveBasic;
+  document.getElementById('deleteBtn').onclick = deleteProject;
+
+  // 팝업 모드(iframe)에서는 "목록" 버튼 숨김
+  if (new URL(location.href).searchParams.get('popup') === '1') {
+    const lb = document.getElementById('listBtn');
+    if (lb) lb.style.display = 'none';
+  }
+}
+
+async function deleteProject() {
+  if (!confirm(`[${project.project_code}] ${project.project_name}\n\n이 프로젝트를 삭제하면 매출/매입/투입/활동/솔루션 등 모든 하위 데이터가 함께 삭제됩니다.\n정말 삭제하시겠습니까?`)) return;
+  try {
+    await api.del('/api/projects/' + PROJECT_ID);
+    toast('프로젝트가 삭제되었습니다.', 'success');
+    const isPopup = new URL(location.href).searchParams.get('popup') === '1';
+    if (isPopup && window.parent && window.parent !== window) {
+      // 상세 팝업(iframe) 안: 부모 창에 알려 팝업 닫고 목록 새로고침
+      setTimeout(() => {
+        try {
+          const dp = window.parent.document.querySelector('.detail-popup-back .dp-close');
+          if (dp) dp.click();
+          else window.parent.location.reload();
+        } catch { window.parent.location.reload(); }
+      }, 500);
+    } else {
+      setTimeout(() => { location.href = 'projects.html'; }, 500);
+    }
+  } catch (e) {
+    toast('삭제 실패: ' + (e.message || ''), 'error');
+  }
 }
 
 function renderStatusFlow() {

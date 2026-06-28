@@ -572,6 +572,8 @@ function bindPeriodLinks() {
 // 고객사 정보 + 관련 프로젝트 팝업
 // ============================================================
 async function openCustomerInfoPopup(customerId) {
+  // 이미 정보 팝업이 떠 있으면 무시 (연속 클릭 중복 방지)
+  if (document.querySelector('.modal-backdrop.over')) return;
   let customer = null, projList = [], contacts = [];
   try {
     [customer, projList, contacts] = await Promise.all([
@@ -668,6 +670,8 @@ async function openCustomerInfoPopup(customerId) {
 // 원도급사 정보 + 관련 프로젝트 팝업
 // ============================================================
 async function openPrimeContractorPopup(name) {
+  // 이미 정보 팝업이 떠 있으면 무시 (연속 클릭 중복 방지)
+  if (document.querySelector('.modal-backdrop.over')) return;
   let projList = [];
   try {
     projList = await api.get('/api/projects?prime_contractor=' + encodeURIComponent(name));

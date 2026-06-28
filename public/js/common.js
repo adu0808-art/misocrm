@@ -748,6 +748,9 @@ window.openCustomerQuickAdd = openCustomerQuickAdd;
 
 // 프로젝트 상세 팝업 (iframe 모달)
 function openDetailPopup(projectId, onClose) {
+  // 이미 상세 팝업이 떠 있으면 무시 (중복/연속 클릭 방어)
+  if (document.querySelector('.detail-popup-back')) return;
+
   const back = document.createElement('div');
   back.className = 'detail-popup-back';
   back.innerHTML = `
@@ -759,14 +762,18 @@ function openDetailPopup(projectId, onClose) {
       <iframe src="project-detail.html?id=${encodeURIComponent(projectId)}&popup=1"></iframe>
     </div>`;
   document.body.appendChild(back);
+
+  let closed = false;
+  const onEsc = (ev) => { if (ev.key === 'Escape') close(); };
   const close = () => {
+    if (closed) return;                               // 멱등 처리
+    closed = true;
+    document.removeEventListener('keydown', onEsc);   // ESC 리스너 항상 정리
     back.remove();
     if (typeof onClose === 'function') onClose();
   };
   back.querySelector('.dp-close').onclick = close;
   back.addEventListener('click', e => { if (e.target === back) close(); });
-  // ESC로 닫기
-  const onEsc = (ev) => { if (ev.key === 'Escape') { close(); document.removeEventListener('keydown', onEsc); } };
   document.addEventListener('keydown', onEsc);
 }
 window.openDetailPopup = openDetailPopup;

@@ -40,14 +40,20 @@
         </div>
       </div>
 
-      <div class="stats-grid" style="grid-template-columns: 1fr 1fr;">
-        <!-- 월별 표 -->
+      <div class="stats-grid" style="grid-template-columns: 1.4fr 1fr;">
+        <!-- 기간 상세 (월별/일별 토글) -->
         <div class="card">
-          <div class="card-header"><h3>월별 상세</h3></div>
+          <div class="card-header">
+            <h3>기간 상세</h3>
+            <div id="periodToggle" class="schedule-view-toggle">
+              <button class="btn btn-sm ptog active" data-g="month">월별</button>
+              <button class="btn btn-sm ptog" data-g="day">일별</button>
+            </div>
+          </div>
           <div class="card-body" style="padding:0;">
-            <div class="table-wrap" style="max-height:340px;overflow:auto;"><table class="data">
-              <thead><tr><th>월</th><th class="num">들어올 돈</th><th class="num">나갈 돈</th><th class="num">순액</th><th class="num">누적</th></tr></thead>
-              <tbody id="monthlyBody"></tbody>
+            <div class="table-wrap" style="max-height:360px;overflow:auto;"><table class="data">
+              <thead id="periodHead"></thead>
+              <tbody id="periodBody"></tbody>
             </table></div>
           </div>
         </div>
@@ -55,8 +61,8 @@
         <div class="card">
           <div class="card-header"><h3>본부별 현황</h3></div>
           <div class="card-body" style="padding:0;">
-            <div class="table-wrap" style="max-height:340px;overflow:auto;"><table class="data">
-              <thead><tr><th>본부</th><th class="num">받을 돈</th><th class="num">줄 돈</th><th class="num">순액</th></tr></thead>
+            <div class="table-wrap" style="max-height:360px;overflow:auto;"><table class="data">
+              <thead><tr><th>본부</th><th class="num">받을 돈</th><th class="num">나갈 돈</th><th class="num">순액</th></tr></thead>
               <tbody id="divBody"></tbody>
             </table></div>
           </div>

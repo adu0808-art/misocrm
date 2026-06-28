@@ -12,6 +12,8 @@ db/*.sqlite
 db/*.sqlite3
 # 운영 초기 시드 DB는 git에 포함 (배포 시 자동 부트스트랩용)
 !db/initial.db
+# 영속성 진단 마커 (런타임 생성, 커밋 제외)
+db/.persist_marker.json
 
 # Logs
 logs

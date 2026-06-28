@@ -1,8 +1,9 @@
 renderLayout('자금현황');
 
 let unit = localStorage.getItem('miso_cashflow_unit') || '억원';
-let selectedYear = '';   // '' = 전체
+let selectedYear = String(new Date().getFullYear());   // 기본: 현재 연도
 let yearsLoaded = false;
+let granularity = 'month';   // 'month' | 'day'  (상세 표 단위)
 let chart = null;
 let curDetail = 'recv';
 let summaryCache = null;
@@ -25,6 +26,12 @@ async function init() {
   document.getElementById('fltDiv').onchange = loadDetail;
   document.getElementById('fltOverdue').onchange = loadDetail;
 
+  // 월별/일별 토글
+  document.querySelectorAll('#periodToggle .ptog').forEach(b => b.onclick = () => {
+    granularity = b.dataset.g;
+    renderPeriodTable();
+  });
+
   // 본부 필터 채우기
   try {
     const divs = await api.get('/api/masters/divisions');
@@ -40,11 +47,17 @@ async function load() {
   summaryCache = await api.get('/api/cashflow/summary' + q);
   document.getElementById('todayLabel').textContent = '기준일 ' + summaryCache.today +
     (selectedYear ? ' · ' + selectedYear + '년' : ' · 전체 기간');
-  // 연도 셀렉트 채우기 (최초 1회)
+  // 연도 셀렉트 채우기 (최초 1회) — 현재연도가 데이터에 없으면 가장 최근 연도로
   if (!yearsLoaded && Array.isArray(summaryCache.years)) {
+    const years = summaryCache.years;
+    if (selectedYear && years.length && !years.includes(Number(selectedYear))) {
+      selectedYear = String(years[0]); // 최신 연도
+      yearsLoaded = true;
+      return load(); // 폴백 연도로 재조회
+    }
     const sel = document.getElementById('yearSel');
     sel.innerHTML = '<option value="">전체</option>' +
-      summaryCache.years.map(y => `<option value="${y}">${y}년</option>`).join('');
+      years.map(y => `<option value="${y}">${y}년</option>`).join('');
     sel.value = selectedYear;
     yearsLoaded = true;
   }
@@ -55,7 +68,7 @@ async function load() {
 function render() {
   if (!summaryCache) return;
   renderKPI(summaryCache.kpi);
-  renderMonthly(summaryCache.monthly);
+  renderPeriodTable();
   renderDivisions(summaryCache.byDivision);
   renderChart(summaryCache.monthly);
 }
@@ -69,12 +82,12 @@ function renderKPI(k) {
       <div class="sub">${k.receivable_cnt}건 · 연체 <span class="text-danger">${f(k.receivable_overdue)}</span></div>
     </div>
     <div class="stat-card danger">
-      <div class="label">줄 돈 (미지급)</div>
-      <div class="value">${f(k.payable)}</div>
-      <div class="sub">${k.payable_cnt}건 · 연체 <span class="text-danger">${f(k.payable_overdue)}</span></div>
+      <div class="label">나갈 돈 (미지급 + 운영비)</div>
+      <div class="value">${f(k.outflow)}</div>
+      <div class="sub">미지급 ${f(k.payable)} · 판관/공통 ${f(k.opex)}</div>
     </div>
     <div class="stat-card ${netClass}">
-      <div class="label">순 현금흐름 (받을 − 줄)</div>
+      <div class="label">순 현금흐름 (받을 − 나갈)</div>
       <div class="value">${f(k.net)}</div>
       <div class="sub">${k.net >= 0 ? '순유입 예상' : '순유출 주의'}</div>
     </div>
@@ -85,38 +98,56 @@ function renderKPI(k) {
     </div>`;
 }
 
-function renderMonthly(monthly) {
-  const tbody = document.getElementById('monthlyBody');
-  tbody.innerHTML = monthly.map(m => {
+// 월별/일별 상세 표 (운영비 컬럼 포함)
+function renderPeriodTable() {
+  const isDay = granularity === 'day';
+  const rows = isDay ? (summaryCache.daily || []) : (summaryCache.monthly || []);
+  // 토글 버튼 상태
+  document.querySelectorAll('#periodToggle .ptog').forEach(b =>
+    b.classList.toggle('active', b.dataset.g === granularity));
+  const periodLabel = isDay ? '일자' : '월';
+  const head = document.getElementById('periodHead');
+  if (head) head.innerHTML = `<tr>
+    <th>${periodLabel}</th>
+    <th class="num">들어올 돈</th>
+    <th class="num">나갈 돈(매입)</th>
+    <th class="num">운영비(판관/공통)</th>
+    <th class="num">순액</th>
+    <th class="num">누적</th></tr>`;
+  const tbody = document.getElementById('periodBody');
+  tbody.innerHTML = rows.map(m => {
+    const key = isDay ? m.d : m.ym;
     const cls = m.is_current ? 'style="background:#fef9c3;font-weight:600;"' : (m.is_past ? 'style="color:#94a3b8;"' : '');
-    const label = m.ym + (m.is_current ? ' ◀ 이번달' : '');
+    const tag = m.is_current ? (isDay ? ' ◀ 오늘' : ' ◀ 이번달') : '';
     return `<tr ${cls}>
-      <td class="nowrap">${label}</td>
+      <td class="nowrap">${key}${tag}</td>
       <td class="num text-success">${m.inflow ? f(m.inflow) : '-'}</td>
-      <td class="num text-danger">${m.outflow ? f(m.outflow) : '-'}</td>
+      <td class="num text-danger">${m.purchase ? f(m.purchase) : '-'}</td>
+      <td class="num" style="color:#b45309;">${m.opex ? f(m.opex) : '-'}</td>
       <td class="num ${m.net<0?'text-danger':''} fw-bold">${f(m.net)}</td>
       <td class="num">${f(m.cumulative)}</td>
     </tr>`;
-  }).join('') || `<tr><td colspan="5" class="empty">예정 현금흐름이 없습니다.</td></tr>`;
+  }).join('') || `<tr><td colspan="6" class="empty">예정 현금흐름이 없습니다.</td></tr>`;
 }
 
 function renderDivisions(divs) {
   const tbody = document.getElementById('divBody');
-  let tr=0, tp=0;
+  let tr=0, tp=0, to=0;
   tbody.innerHTML = divs.map(d => {
-    tr += d.recv; tp += d.pay;
+    tr += d.recv; tp += d.pay; to += (d.opex||0);
     return `<tr>
       <td><strong>${esc(d.division_name||'(미지정)')}</strong></td>
-      <td class="num text-success">${f(d.recv)}<br><small class="text-muted">${d.recv_cnt}건${d.recv_overdue?' · 연체 '+f(d.recv_overdue):''}</small></td>
-      <td class="num text-danger">${f(d.pay)}<br><small class="text-muted">${d.pay_cnt}건${d.pay_overdue?' · 연체 '+f(d.pay_overdue):''}</small></td>
+      <td class="num text-success">${f(d.recv)}</td>
+      <td class="num text-danger">${f(d.outflow)}<br><small class="text-muted">매입 ${f(d.pay)} · 운영 ${f(d.opex||0)}</small></td>
       <td class="num ${d.net<0?'text-danger':''} fw-bold">${f(d.net)}</td>
     </tr>`;
   }).join('') || `<tr><td colspan="4" class="empty">데이터 없음</td></tr>`;
   // 합계
   if (divs.length) {
     tbody.innerHTML += `<tr style="background:#f1f5f9;font-weight:700;">
-      <td>합계</td><td class="num text-success">${f(tr)}</td><td class="num text-danger">${f(tp)}</td>
-      <td class="num ${tr-tp<0?'text-danger':''}">${f(tr-tp)}</td></tr>`;
+      <td>합계</td><td class="num text-success">${f(tr)}</td>
+      <td class="num text-danger">${f(tp+to)}</td>
+      <td class="num ${tr-tp-to<0?'text-danger':''}">${f(tr-tp-to)}</td></tr>`;
   }
 }
 
@@ -129,9 +160,10 @@ function renderChart(monthly) {
     data: {
       labels: monthly.map(m => m.ym),
       datasets: [
-        { type:'bar', label:'들어올 돈', data: monthly.map(m=>m.inflow/factor), backgroundColor:'#22c55e', order:2 },
-        { type:'bar', label:'나갈 돈', data: monthly.map(m=>-m.outflow/factor), backgroundColor:'#ef4444', order:2 },
-        { type:'line', label:'누적 순현금', data: monthly.map(m=>m.cumulative/factor), borderColor:'#2563eb', backgroundColor:'rgba(37,99,235,.1)', fill:false, tension:0.3, order:1, yAxisID:'y' }
+        { type:'bar', label:'들어올 돈', data: monthly.map(m=>m.inflow/factor), backgroundColor:'#22c55e', stack:'in', order:3 },
+        { type:'bar', label:'나갈 돈(매입)', data: monthly.map(m=>-(m.purchase||0)/factor), backgroundColor:'#ef4444', stack:'out', order:3 },
+        { type:'bar', label:'운영비(판관/공통)', data: monthly.map(m=>-(m.opex||0)/factor), backgroundColor:'#f59e0b', stack:'out', order:3 },
+        { type:'line', label:'누적 순현금', data: monthly.map(m=>m.cumulative/factor), borderColor:'#2563eb', backgroundColor:'rgba(37,99,235,.1)', fill:false, tension:0.3, order:1 }
       ]
     },
     options: {
@@ -140,7 +172,7 @@ function renderChart(monthly) {
         legend:{position:'bottom'},
         tooltip:{callbacks:{label:ctx=>ctx.dataset.label+': '+Math.abs(ctx.parsed.y).toLocaleString('ko-KR')+unit}}
       },
-      scales:{ y:{ title:{display:true,text:'금액 ('+unit+')'}, stacked:false } }
+      scales:{ x:{ stacked:true }, y:{ title:{display:true,text:'금액 ('+unit+')'}, stacked:true } }
     }
   });
 }

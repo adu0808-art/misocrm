@@ -28,26 +28,71 @@ async function loadDivisions() {
   const list = await api.get('/api/masters/divisions');
   body.innerHTML = `
     <div class="flex-between mb-16">
-      <div class="text-muted">총 ${list.length}개 본부</div>
+      <div class="text-muted">총 ${list.length}개 본부 <span style="font-size:12px;">· 행을 드래그하여 순서를 변경하면 정렬값이 자동 저장됩니다.</span></div>
       <button class="btn btn-primary" id="addBtn">+ 본부 추가</button>
     </div>
-    <div class="table-wrap"><table class="data">
-      <thead><tr><th>코드</th><th>본부명</th><th>정렬</th><th>활성</th><th></th></tr></thead>
-      <tbody>${list.map(d => `
-        <tr>
+    <div class="table-wrap"><table class="data" id="divTable">
+      <thead><tr><th style="width:36px;"></th><th>코드</th><th>본부명</th><th>정렬</th><th>활성</th><th></th></tr></thead>
+      <tbody id="divDragBody">${list.map(d => `
+        <tr data-id="${d.id}" draggable="true" class="drag-row">
+          <td class="drag-handle" title="드래그하여 이동">⠿</td>
           <td>${d.code}</td>
           <td>${d.name}</td>
-          <td>${d.sort_order ?? 0}</td>
+          <td class="sort-val">${d.sort_order ?? 0}</td>
           <td>${d.active ? '<span class="badge badge-수주완료">활성</span>' : '<span class="badge badge-수주실패">비활성</span>'}</td>
           <td class="actions">
             <button class="btn btn-sm" data-edit="${d.id}">수정</button>
             <button class="btn btn-sm btn-danger" data-del="${d.id}">삭제</button>
           </td>
-        </tr>`).join('') || `<tr><td colspan="5" class="empty">등록된 본부가 없습니다.</td></tr>`}
+        </tr>`).join('') || `<tr><td colspan="6" class="empty">등록된 본부가 없습니다.</td></tr>`}
       </tbody></table></div>`;
   body.querySelector('#addBtn').onclick = () => editDivision(null);
   body.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => editDivision(b.dataset.edit));
   body.querySelectorAll('[data-del]').forEach(b => b.onclick = () => delItem('/api/masters/divisions/' + b.dataset.del, loadDivisions));
+  bindDivisionDrag();
+}
+
+function bindDivisionDrag() {
+  const tbody = document.getElementById('divDragBody');
+  if (!tbody) return;
+  let dragEl = null;
+
+  tbody.querySelectorAll('tr.drag-row').forEach(tr => {
+    tr.addEventListener('dragstart', () => { dragEl = tr; tr.classList.add('dragging'); });
+    tr.addEventListener('dragend', () => {
+      tr.classList.remove('dragging');
+      tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
+      dragEl = null;
+    });
+    tr.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (!dragEl || dragEl === tr) return;
+      const rect = tr.getBoundingClientRect();
+      const after = (e.clientY - rect.top) > rect.height / 2;
+      tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
+      tr.classList.add('drag-over');
+      if (after) tr.after(dragEl); else tr.before(dragEl);
+    });
+    tr.addEventListener('drop', (e) => e.preventDefault());
+  });
+
+  tbody.addEventListener('drop', async () => {
+    tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
+    const ids = Array.from(tbody.querySelectorAll('tr.drag-row')).map(r => Number(r.dataset.id));
+    // 화면상 정렬값 즉시 갱신
+    tbody.querySelectorAll('tr.drag-row').forEach((r, i) => {
+      const cell = r.querySelector('.sort-val');
+      if (cell) cell.textContent = i + 1;
+    });
+    try {
+      await api.post('/api/masters/divisions/reorder', { ids });
+      divisionsCache = null;
+      toast('본부 순서가 저장되었습니다.', 'success');
+    } catch (e) {
+      toast('순서 저장 실패: ' + e.message, 'error');
+      loadDivisions();
+    }
+  });
 }
 async function editDivision(id) {
   const item = id ? await api.get('/api/masters/divisions/' + id) : { code: '', name: '', sort_order: 0, active: 1 };
@@ -112,7 +157,33 @@ async function editUser(id, divs) {
       <div class="form-row"><label>이메일</label><input id="m_email" value="${item.email || ''}"></div>
       <div class="form-row"><label>전화</label><input id="m_phone" value="${item.phone || ''}"></div>
       <div class="form-row"><label>활성</label><select id="m_active"><option value="1" ${item.active?'selected':''}>활성</option><option value="0" ${!item.active?'selected':''}>비활성</option></select></div>
+      <div class="form-row full" style="border-top:1px solid var(--border);margin-top:8px;padding-top:8px;">
+        <label>비밀번호 ${id ? '(변경 시에만 입력)' : '<span style="color:#dc2626;">*</span>'}</label>
+        <input id="m_password" type="password" autocomplete="new-password" placeholder="${id ? '비워두면 기존 비밀번호 유지' : '신규 비밀번호'}">
+      </div>
+      <div class="form-row full">
+        <label>비밀번호 확인</label>
+        <input id="m_password2" type="password" autocomplete="new-password" placeholder="다시 한 번 입력">
+      </div>
+      <div class="form-row full">
+        <label></label>
+        <div id="m_pw_hint" style="font-size:11px;color:var(--text-muted);line-height:1.6;">
+          영문 대문자 + 소문자 + 숫자 + 특수기호 모두 포함, 8자 이상
+        </div>
+      </div>
     </div>`, async (m) => {
+    const password = m.querySelector('#m_password').value;
+    const password2 = m.querySelector('#m_password2').value;
+
+    // 신규 등록 시 비밀번호 필수
+    if (!id && !password) { toast('신규 사용자는 비밀번호가 필수입니다.', 'error'); return false; }
+
+    if (password) {
+      const err = passwordComplexityCheck(password);
+      if (err) { toast(err, 'error'); return false; }
+      if (password !== password2) { toast('비밀번호 확인이 일치하지 않습니다.', 'error'); return false; }
+    }
+
     const body = {
       username: m.querySelector('#m_username').value.trim(),
       name: m.querySelector('#m_name').value.trim(),
@@ -122,12 +193,40 @@ async function editUser(id, divs) {
       phone: m.querySelector('#m_phone').value.trim(),
       active: Number(m.querySelector('#m_active').value)
     };
+    if (password) body.password = password;
     if (!body.username || !body.name) { toast('ID와 이름은 필수입니다.', 'error'); return false; }
-    if (id) await api.put('/api/masters/users/' + id, body);
-    else await api.post('/api/masters/users', body);
-    toast('저장되었습니다.', 'success');
-    loadUsers();
+    try {
+      if (id) await api.put('/api/masters/users/' + id, body);
+      else await api.post('/api/masters/users', body);
+      toast('저장되었습니다.', 'success');
+      loadUsers();
+    } catch (e) {
+      toast(e.message || '저장 실패', 'error'); return false;
+    }
   });
+
+  // 비밀번호 실시간 복잡도 표시
+  const pwEl = document.getElementById('m_password');
+  const hintEl = document.getElementById('m_pw_hint');
+  const updateHint = () => {
+    const v = pwEl.value;
+    if (!v) {
+      hintEl.innerHTML = '영문 대문자 + 소문자 + 숫자 + 특수기호 모두 포함, 8자 이상';
+      hintEl.style.color = 'var(--text-muted)';
+      return;
+    }
+    const checks = [
+      { ok: v.length >= 8, t: '8자 이상' },
+      { ok: /[a-z]/.test(v), t: '소문자' },
+      { ok: /[A-Z]/.test(v), t: '대문자' },
+      { ok: /\d/.test(v), t: '숫자' },
+      { ok: /[^a-zA-Z0-9]/.test(v), t: '특수문자' },
+    ];
+    hintEl.innerHTML = checks.map(c =>
+      `<span style="color:${c.ok?'var(--success)':'var(--danger)'};margin-right:10px;font-weight:600;">${c.ok?'✓':'✗'} ${c.t}</span>`
+    ).join('');
+  };
+  pwEl.addEventListener('input', updateHint);
 }
 
 // ===== 고객사 =====

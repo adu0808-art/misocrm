@@ -246,6 +246,15 @@ function init() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS sessions (
+      token TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      expires_at DATETIME NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_exp  ON sessions(expires_at);
+
     CREATE INDEX IF NOT EXISTS idx_projects_division ON projects(division_id);
     CREATE INDEX IF NOT EXISTS idx_projects_year ON projects(business_year);
     CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
@@ -282,6 +291,10 @@ function init() {
   // project_types: 내부개발 여부
   addColumnIfMissing('project_types', 'is_internal', 'INTEGER DEFAULT 0');
 
+  // users: 비밀번호 / 최근 로그인
+  addColumnIfMissing('users', 'password_hash',  'TEXT');
+  addColumnIfMissing('users', 'last_login_at',  'DATETIME');
+
   // projects: 즐겨찾기/도메인/연도별 참여금액
   addColumnIfMissing('projects', 'is_favorite', 'INTEGER DEFAULT 0');
   addColumnIfMissing('projects', 'top_domain',  'TEXT');
@@ -292,5 +305,20 @@ function init() {
 }
 
 init();
+
+// admin 사용자 기본 비밀번호 설정 (최초 1회). 환경변수 ADMIN_PASSWORD 우선.
+(function ensureAdminPassword() {
+  try {
+    const admin = db.prepare('SELECT id, password_hash FROM users WHERE username = ?').get('admin');
+    if (!admin) return;
+    if (admin.password_hash) return;
+    const crypto = require('crypto');
+    const pwd = process.env.ADMIN_PASSWORD || 'Admin@2026';
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = crypto.scryptSync(pwd, salt, 64).toString('hex');
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(`${salt}:${hash}`, admin.id);
+    console.log(`[Init] admin 계정 기본 비밀번호 설정 완료${process.env.ADMIN_PASSWORD ? ' (env)' : ' (default: Admin@2026)'}`);
+  } catch (e) { console.error('admin 비밀번호 설정 실패:', e.message); }
+})();
 
 module.exports = db;

@@ -20,6 +20,117 @@ const NAV = [
   ]}
 ];
 
+// 비밀번호 복잡도 검증 (대/소/숫자/특수 모두 포함, 8자 이상)
+function passwordComplexityCheck(p) {
+  if (!p) return '비밀번호를 입력하세요.';
+  if (p.length < 8) return '비밀번호는 8자 이상이어야 합니다.';
+  if (!/[a-z]/.test(p)) return '소문자를 포함해야 합니다.';
+  if (!/[A-Z]/.test(p)) return '대문자를 포함해야 합니다.';
+  if (!/\d/.test(p))    return '숫자를 포함해야 합니다.';
+  if (!/[^a-zA-Z0-9]/.test(p)) return '특수문자(!@#$ 등)를 포함해야 합니다.';
+  return null;
+}
+window.passwordComplexityCheck = passwordComplexityCheck;
+
+function _esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function esc(s) { return _esc(s); }
+
+// 본인 비밀번호 변경 모달 (사이드바 자물쇠 버튼)
+function openChangePwModal() {
+  const back = document.createElement('div');
+  back.className = 'modal-backdrop open';
+  back.innerHTML = `
+    <div class="modal" style="max-width:420px;">
+      <div class="modal-header">
+        <h3>🔒 비밀번호 변경</h3>
+        <button class="close-x">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="pw-form">
+          <div class="pw-field">
+            <label for="cp_cur">현재 비밀번호</label>
+            <input id="cp_cur" type="password" autocomplete="current-password" placeholder="현재 사용 중인 비밀번호">
+          </div>
+          <div class="pw-field">
+            <label for="cp_new">새 비밀번호</label>
+            <input id="cp_new" type="password" autocomplete="new-password" placeholder="영문 대/소문자 + 숫자 + 특수문자, 8자 이상">
+          </div>
+          <div class="pw-field">
+            <label for="cp_new2">새 비밀번호 확인</label>
+            <input id="cp_new2" type="password" autocomplete="new-password" placeholder="새 비밀번호 다시 입력">
+            <div id="cp_match" class="pw-match"></div>
+          </div>
+          <div class="pw-checklist" id="cp_hint"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" data-act="cancel">취소</button>
+        <button class="btn btn-primary" data-act="save">변경</button>
+      </div>
+    </div>`;
+  document.body.appendChild(back);
+  const close = () => back.remove();
+  back.querySelector('.close-x').onclick = close;
+  back.querySelector('[data-act="cancel"]').onclick = close;
+  back.addEventListener('click', e => { if (e.target === back) close(); });
+  const onEsc = (e) => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onEsc); } };
+  document.addEventListener('keydown', onEsc);
+
+  const hint  = back.querySelector('#cp_hint');
+  const newEl = back.querySelector('#cp_new');
+  const new2El = back.querySelector('#cp_new2');
+  const matchEl = back.querySelector('#cp_match');
+
+  const renderChecks = () => {
+    const v = newEl.value;
+    const checks = [
+      { ok: v.length >= 8,           t: '8자 이상' },
+      { ok: /[a-z]/.test(v),         t: '소문자' },
+      { ok: /[A-Z]/.test(v),         t: '대문자' },
+      { ok: /\d/.test(v),            t: '숫자' },
+      { ok: /[^a-zA-Z0-9]/.test(v),  t: '특수문자' },
+    ];
+    hint.innerHTML = checks.map(c =>
+      `<span class="pw-chk ${c.ok ? 'ok' : ''}">${c.ok ? '✓' : '○'} ${c.t}</span>`
+    ).join('');
+  };
+  const renderMatch = () => {
+    if (!new2El.value) { matchEl.textContent = ''; matchEl.className = 'pw-match'; return; }
+    if (newEl.value === new2El.value) { matchEl.textContent = '✓ 일치합니다'; matchEl.className = 'pw-match ok'; }
+    else { matchEl.textContent = '✗ 일치하지 않습니다'; matchEl.className = 'pw-match err'; }
+  };
+  newEl.addEventListener('input', () => { renderChecks(); renderMatch(); });
+  new2El.addEventListener('input', renderMatch);
+  renderChecks();
+
+  setTimeout(() => back.querySelector('#cp_cur').focus(), 50);
+
+  back.querySelector('[data-act="save"]').onclick = async () => {
+    const cur = back.querySelector('#cp_cur').value;
+    const n1  = newEl.value;
+    const n2  = new2El.value;
+    if (!cur) { toast('현재 비밀번호를 입력하세요.', 'error'); return; }
+    const err = passwordComplexityCheck(n1);
+    if (err) { toast(err, 'error'); return; }
+    if (n1 !== n2) { toast('새 비밀번호 확인이 일치하지 않습니다.', 'error'); return; }
+    try {
+      const r = await fetch('/api/auth/change-password', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ current: cur, next: n1 })
+      });
+      if (!r.ok) { const e = await r.json().catch(()=>({})); toast(e.error || '변경 실패', 'error'); return; }
+      toast('비밀번호가 변경되었습니다. 다른 기기에서 자동 로그아웃됩니다.', 'success');
+      close();
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  };
+}
+window.openChangePwModal = openChangePwModal;
+
 function renderLayout(title) {
   const isPopup = new URL(location.href).searchParams.get('popup') === '1';
   if (isPopup) {
@@ -43,8 +154,36 @@ function renderLayout(title) {
             return `<a class="${active}" href="${it.href}">${it.label}</a>`;
           }).join('')}
         `).join('')}
-      </nav>`;
+      </nav>
+      <div class="sidebar-user" id="sidebarUser">
+        <div class="sb-user-info" id="sbUserInfo">로딩 중...</div>
+        <div class="sb-user-actions">
+          <button class="sb-action" id="sbChangePw" title="비밀번호 변경">🔒 비밀번호</button>
+          <button class="sb-action" id="sbLogout" title="로그아웃">🚪 로그아웃</button>
+        </div>
+      </div>`;
     document.body.prepend(sidebar);
+
+    // 현재 사용자 정보 표시 + 로그아웃 연결
+    fetch('/api/auth/me').then(r => r.ok ? r.json() : null).then(d => {
+      const el = document.getElementById('sbUserInfo');
+      if (!el) return;
+      if (!d || !d.user) {
+        el.innerHTML = '<a href="/login.html" style="color:#93c5fd;">로그인</a>';
+        return;
+      }
+      const u = d.user;
+      el.innerHTML = `
+        <div style="font-weight:600;color:#fff;font-size:13px;">${esc(u.name)}</div>
+        <div style="font-size:11px;color:#94a3b8;">@${esc(u.username)}${u.division_name?' · '+esc(u.division_name):''}</div>`;
+    }).catch(()=>{});
+
+    document.getElementById('sbLogout').onclick = async () => {
+      if (!confirm('로그아웃 하시겠습니까?')) return;
+      try { await fetch('/api/auth/logout', { method: 'POST' }); } catch {}
+      location.href = '/login.html';
+    };
+    document.getElementById('sbChangePw').onclick = openChangePwModal;
   }
 
   const main = document.querySelector('.main');

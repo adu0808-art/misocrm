@@ -85,7 +85,6 @@ function renderBasic() {
           <div class="form-row"><label>수행 시작일</label><input id="b_start" type="date" value="${project.start_date||''}"></div>
           <div class="form-row"><label>수행 종료일</label><input id="b_end" type="date" value="${project.end_date||''}"></div>
           <div class="form-row"><label>총사업비</label>${currencyHtml('b_budget', project.total_budget)}</div>
-          <div class="form-row"><label>총매입금액</label>${currencyHtml('b_purchase', project.total_purchase)}</div>
           <div class="form-row"><label>기술지원확약서일</label><input id="b_tech" type="date" value="${project.tech_support_date||''}"></div>
           <div class="form-row"><label>상위도메인</label><input id="b_top" value="${escapeAttr(project.top_domain)}"></div>
           <div class="form-row"><label>하위도메인</label><input id="b_sub" value="${escapeAttr(project.sub_domain)}"></div>
@@ -94,15 +93,18 @@ function renderBasic() {
     </div>
 
     <div class="card">
-      <div class="card-header"><h3>예상매출내역</h3></div>
+      <div class="card-header">
+        <h3>예상매입매출</h3>
+        <small class="text-muted" style="font-size:11px;font-weight:400;">총매출액·예상매출액·실매출액은 자동 계산됩니다.</small>
+      </div>
       <div class="card-body">
         <div class="grid-form">
           <div class="form-row"><label>참여비율(%)</label><input id="b_prate" type="number" step="0.1" value="${project.participation_rate||0}"></div>
-          <div class="form-row"><label>참여금액</label>${currencyHtml('b_pamt', project.participation_amount)}</div>
+          <div class="form-row"><label title="총사업비 × 참여비율">총매출액 <span class="auto-tag">자동</span></label>${currencyHtml('b_pamt', project.participation_amount)}</div>
+          <div class="form-row"><label>총매입액</label>${currencyHtml('b_purchase', project.total_purchase)}</div>
+          <div class="form-row"><label title="총매출액 − 총매입액">실매출액 <span class="auto-tag">자동</span></label>${currencyHtml('b_act', project.actual_revenue)}</div>
           <div class="form-row"><label>수주확률(%)</label><input id="b_win" type="number" step="0.1" value="${project.win_probability||0}"></div>
-          <div class="form-row"><label>예상매출액</label>${currencyHtml('b_exp', project.expected_revenue)}</div>
-          <div class="form-row"><label>실매출액</label>${currencyHtml('b_act', project.actual_revenue)}</div>
-          <div class="form-row"><label>솔루션 납품 여부</label><select id="b_hsol"><option value="N" ${project.has_solution!=='Y'?'selected':''}>N</option><option value="Y" ${project.has_solution==='Y'?'selected':''}>Y</option></select></div>
+          <div class="form-row"><label title="총매출액 × 수주확률">예상매출액 <span class="auto-tag">자동</span></label>${currencyHtml('b_exp', project.expected_revenue)}</div>
         </div>
       </div>
     </div>
@@ -131,7 +133,54 @@ function renderBasic() {
   `;
   document.getElementById('tab-basic').innerHTML = html;
   bindCurrencyInputs(document.getElementById('tab-basic'));
+  bindAutoCalc();
   loadYearlyBreakdown();
+}
+
+// 예상매입매출 자동계산
+//  총매출액(b_pamt)   = 총사업비(b_budget) × 참여비율(b_prate)/100
+//  예상매출액(b_exp)  = 총매출액 × 수주확률(b_win)/100
+//  실매출액(b_act)    = 총매출액 − 총매입액(b_purchase)
+function bindAutoCalc() {
+  const pamtEl = document.getElementById('b_pamt');
+  const expEl  = document.getElementById('b_exp');
+  const actEl  = document.getElementById('b_act');
+  // 자동계산 필드는 직접 입력 막기 (readonly + 회색)
+  [pamtEl, expEl, actEl].forEach(el => {
+    if (!el) return;
+    el.readOnly = true;
+    el.style.background = '#f1f5f9';
+    el.style.color = 'var(--text)';
+    el.title = '자동 계산되는 값입니다';
+  });
+
+  const setCurrency = (el, val) => {
+    if (!el) return;
+    el.value = Math.round(val).toLocaleString('ko-KR');
+  };
+  const recalc = () => {
+    const budget = currencyValue(document.getElementById('b_budget'));
+    const prate  = Number(document.getElementById('b_prate').value || 0);
+    const win    = Number(document.getElementById('b_win').value || 0);
+    const purchase = currencyValue(document.getElementById('b_purchase'));
+
+    const totalSales = budget * prate / 100;          // 총매출액
+    const expected   = totalSales * win / 100;          // 예상매출액
+    const actual     = totalSales - purchase;           // 실매출액
+
+    setCurrency(pamtEl, totalSales);
+    setCurrency(expEl, expected);
+    setCurrency(actEl, actual);
+  };
+
+  ['b_budget', 'b_prate', 'b_win', 'b_purchase'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('input', recalc);
+      el.addEventListener('blur', recalc);
+    }
+  });
+  recalc();
 }
 
 async function loadYearlyBreakdown() {
@@ -202,7 +251,7 @@ async function saveBasic() {
     win_probability: Number(v('b_win')) || 0,
     expected_revenue: cv('b_exp'),
     actual_revenue: cv('b_act'),
-    has_solution: v('b_hsol'),
+    has_solution: project.has_solution || 'N',
     sw_registered: v('b_sw'),
     competitor: v('b_comp'),
     intro_channel: v('b_intro'),
@@ -275,14 +324,15 @@ function editSolution(id) {
       <div class="form-row"><label>사양</label><input id="s_spec" value="${escapeAttr(it.spec)}"></div>
       <div class="form-row"><label>표준단가</label>${currencyHtml('s_price', it.standard_price)}</div>
       <div class="form-row"><label>수량</label><input id="s_qty" type="number" value="${it.quantity||1}"></div>
-      <div class="form-row"><label>내부원가</label>${currencyHtml('s_cost', it.internal_cost)}</div>
       <div class="form-row"><label>할인율(%)</label><input id="s_disc" type="number" step="0.1" value="${it.discount_rate||0}"></div>
-      <div class="form-row"><label>납품금액</label>${currencyHtml('s_amt', it.delivery_amount)}</div>
+      <div class="form-row"><label title="표준단가 × 수량 × (1 − 할인율)">납품금액 <span class="auto-tag">자동</span></label>${currencyHtml('s_amt', it.delivery_amount)}</div>
+      <div class="form-row"><label>내부원가</label>${currencyHtml('s_cost', it.internal_cost)}</div>
+      <div></div>
       <div class="form-row"><label>설치확인일</label><input id="s_inst" type="date" value="${it.install_date||''}"></div>
       <div class="form-row"><label>확약서 발행</label><select id="s_contract"><option value="N" ${it.contract_issued!=='Y'?'selected':''}>N</option><option value="Y" ${it.contract_issued==='Y'?'selected':''}>Y</option></select></div>
       <div class="form-row full"><label>비고</label><input id="s_notes" value="${escapeAttr(it.notes)}"></div>
     </div>
-    <div class="text-muted" style="font-size:12px;margin-top:8px">* 솔루션 선택 시 표준단가/내부원가 자동 채움.</div>
+    <div class="text-muted" style="font-size:12px;margin-top:8px">* 솔루션 선택 시 표준단가/내부원가 자동 채움 · 납품금액 = 표준단가 × 수량 × (1 − 할인율).</div>
   `, async (m) => {
     const body = {
       project_id: Number(PROJECT_ID),
@@ -303,16 +353,36 @@ function editSolution(id) {
     loadSolutions();
   });
   const setSolFields = (back) => {
+    const amtEl = back.querySelector('#s_amt');
+    // 납품금액은 자동계산 (readonly)
+    amtEl.readOnly = true;
+    amtEl.style.background = '#f1f5f9';
+    amtEl.title = '자동 계산되는 값입니다';
+
+    const recalcAmt = () => {
+      const price = currencyValue(back.querySelector('#s_price'));
+      const qty = Number(back.querySelector('#s_qty').value || 1);
+      const disc = Number(back.querySelector('#s_disc').value || 0);
+      const amt = Math.round(price * qty * (1 - disc / 100));
+      amtEl.value = amt.toLocaleString('ko-KR');
+    };
+
+    // 표준단가/수량/할인율 변경 시 납품금액 재계산
+    ['s_price', 's_qty', 's_disc'].forEach(fid => {
+      const el = back.querySelector('#' + fid);
+      if (el) { el.addEventListener('input', recalcAmt); el.addEventListener('blur', recalcAmt); }
+    });
+
     const sel = back.querySelector('#s_id');
     sel.onchange = () => {
       const opt = sel.options[sel.selectedIndex];
       if (!opt.value) return;
-      const priceInput = back.querySelector('#s_price');
-      const costInput = back.querySelector('#s_cost');
-      priceInput.value = Number(opt.dataset.price || 0).toLocaleString('ko-KR');
-      costInput.value = Number(opt.dataset.cost || 0).toLocaleString('ko-KR');
-      if (!id) back.querySelector('#s_amt').value = ((Number(opt.dataset.price)||0) * (Number(back.querySelector('#s_qty').value)||1)).toLocaleString('ko-KR');
+      back.querySelector('#s_price').value = Number(opt.dataset.price || 0).toLocaleString('ko-KR');
+      back.querySelector('#s_cost').value = Number(opt.dataset.cost || 0).toLocaleString('ko-KR');
+      recalcAmt();
     };
+
+    recalcAmt();
   };
   if (id) {
     api.get('/api/project-solutions?project_id=' + PROJECT_ID).then(rows => {

@@ -6,7 +6,19 @@ const Database = require('better-sqlite3');
 // Railway 등 운영: DB_PATH env로 볼륨 경로 지정 (예: /data/crm.db)
 const DB_DIR = path.join(__dirname, '..', 'db');
 const SEED_PATH = path.join(DB_DIR, 'initial.db');
-const DB_PATH = process.env.DB_PATH || path.join(DB_DIR, 'crm.db');
+let DB_PATH = process.env.DB_PATH || path.join(DB_DIR, 'crm.db');
+
+// ── 방어: DB_PATH가 "디렉터리"이면(예: Railway 볼륨 Mount Path를 /data/crm.db 처럼
+//    파일명까지 지정한 경우) 그 폴더 안의 crm.db 를 실제 DB 파일로 사용한다.
+//    이렇게 하면 볼륨 마운트 경로 설정 실수가 있어도 크래시 없이 영속 저장됨.
+try {
+  if (fs.existsSync(DB_PATH) && fs.statSync(DB_PATH).isDirectory()) {
+    const inside = path.join(DB_PATH, 'crm.db');
+    console.warn(`[DB] ⚠️ DB_PATH가 디렉터리입니다(볼륨 마운트 경로로 추정): ${DB_PATH}`);
+    console.warn(`[DB]    → 실제 DB 파일을 그 안에 생성/사용합니다: ${inside}`);
+    DB_PATH = inside;
+  }
+} catch (e) { console.error('DB_PATH 디렉터리 점검 실패:', e.message); }
 
 // 운영 환경 디렉터리 자동 생성
 const liveDir = path.dirname(DB_PATH);

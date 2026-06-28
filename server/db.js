@@ -14,29 +14,40 @@ if (!fs.existsSync(liveDir)) fs.mkdirSync(liveDir, { recursive: true });
 if (!fs.existsSync(DB_DIR))  fs.mkdirSync(DB_DIR, { recursive: true });
 
 // ============================================================
-//  배포 정책
+//  배포 정책 (데이터 보호)
 //   - 스키마: 매 부팅 시 마이그레이션 적용(CREATE IF NOT EXISTS / ADD COLUMN IF MISSING)
-//   - 데이터: 기존 DB가 있으면 절대 덮어쓰지 않음 (시드는 "DB가 없을 때만" 1회)
-//   - SEED_DISABLED=1 이면 시드 복사를 완전히 비활성화 (빈 DB로 시작)
+//   - 데이터: 기존 DB가 있으면 절대 덮어쓰지 않음.
+//   - 시드(개발 스냅샷 initial.db) 복사 기본값:
+//       · 운영 환경(Railway 등)  → 기본 OFF  (배포가 개발 데이터를 운영에 절대 넣지 않음)
+//       · 로컬 개발 환경          → 기본 ON   (새 클론에서 데모 데이터 편의 제공)
+//     강제 제어:
+//       · SEED_ON_FIRST_RUN=1  → 운영에서도 DB가 없을 때 1회 시드 (의도적 초기 적재)
+//       · SEED_DISABLED=1      → 어디서든 시드 완전 비활성화
 // ============================================================
-const seedDisabled = process.env.SEED_DISABLED === '1' || process.env.NO_SEED === '1';
+const isDeployed = !!(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID ||
+                      process.env.RENDER || process.env.FLY_APP_NAME ||
+                      process.env.NODE_ENV === 'production');
+
+let seedEnabled;
+if (process.env.SEED_DISABLED === '1' || process.env.NO_SEED === '1') seedEnabled = false;
+else if (process.env.SEED_ON_FIRST_RUN === '1') seedEnabled = true;
+else seedEnabled = !isDeployed;   // 운영 기본 OFF, 로컬 기본 ON
+
 const dbExisted = fs.existsSync(DB_PATH);
 
 if (dbExisted) {
-  // 이미 데이터가 있는 DB → 스키마만 갱신, 데이터 보존
+  // 이미 데이터가 있는 DB → 스키마만 갱신, 데이터 절대 보존
   console.log(`[DB] 기존 DB 사용 (데이터 보존, 스키마만 마이그레이션): ${DB_PATH}`);
-} else if (!seedDisabled && fs.existsSync(SEED_PATH)) {
-  // 최초 1회: DB가 없을 때만 시드 복사
+} else if (seedEnabled && fs.existsSync(SEED_PATH)) {
+  // DB가 없고 시드 허용된 경우에만 1회 복사
   fs.copyFileSync(SEED_PATH, DB_PATH);
-  console.log(`[Bootstrap] 신규 DB 생성 - 초기 시드 복사: ${SEED_PATH} → ${DB_PATH}`);
+  console.log(`[Bootstrap] 신규 DB - 시드 복사: ${SEED_PATH} → ${DB_PATH}`);
 } else {
-  // 시드 비활성 또는 시드 파일 없음 → 빈 DB로 시작 (스키마는 init()에서 생성)
-  console.log(`[DB] 빈 DB로 시작 (시드 ${seedDisabled ? '비활성화' : '없음'}). 스키마만 생성합니다: ${DB_PATH}`);
+  // 운영 기본 경로: 빈 DB로 시작 (스키마 + admin 자동 생성). 개발 데이터 미적용.
+  console.log(`[DB] 빈 DB로 시작 (시드 미적용: ${isDeployed ? '운영 기본 OFF' : '시드없음/비활성'}). 스키마/admin만 생성: ${DB_PATH}`);
 }
 
 // 영속성 경고: 배포 환경인데 볼륨 경로(DB_PATH) 미지정이면 재배포마다 데이터가 사라짐
-const isDeployed = !!(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID ||
-                      process.env.RENDER || process.env.FLY_APP_NAME);
 if (isDeployed && !process.env.DB_PATH) {
   console.warn('⚠️  [경고] DB_PATH 미설정: 컨테이너 내부 경로를 사용하므로 재배포 시 데이터가 초기화됩니다.');
   console.warn('         영속 볼륨을 마운트하고 DB_PATH=/data/crm.db 를 설정하세요.');

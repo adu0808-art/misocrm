@@ -13,10 +13,33 @@ const liveDir = path.dirname(DB_PATH);
 if (!fs.existsSync(liveDir)) fs.mkdirSync(liveDir, { recursive: true });
 if (!fs.existsSync(DB_DIR))  fs.mkdirSync(DB_DIR, { recursive: true });
 
-// 부트스트랩: 운영 DB 파일이 없고 seed가 있으면 초기 데이터로 복사
-if (!fs.existsSync(DB_PATH) && fs.existsSync(SEED_PATH)) {
+// ============================================================
+//  배포 정책
+//   - 스키마: 매 부팅 시 마이그레이션 적용(CREATE IF NOT EXISTS / ADD COLUMN IF MISSING)
+//   - 데이터: 기존 DB가 있으면 절대 덮어쓰지 않음 (시드는 "DB가 없을 때만" 1회)
+//   - SEED_DISABLED=1 이면 시드 복사를 완전히 비활성화 (빈 DB로 시작)
+// ============================================================
+const seedDisabled = process.env.SEED_DISABLED === '1' || process.env.NO_SEED === '1';
+const dbExisted = fs.existsSync(DB_PATH);
+
+if (dbExisted) {
+  // 이미 데이터가 있는 DB → 스키마만 갱신, 데이터 보존
+  console.log(`[DB] 기존 DB 사용 (데이터 보존, 스키마만 마이그레이션): ${DB_PATH}`);
+} else if (!seedDisabled && fs.existsSync(SEED_PATH)) {
+  // 최초 1회: DB가 없을 때만 시드 복사
   fs.copyFileSync(SEED_PATH, DB_PATH);
-  console.log(`[Bootstrap] 초기 DB 복사: ${SEED_PATH} → ${DB_PATH}`);
+  console.log(`[Bootstrap] 신규 DB 생성 - 초기 시드 복사: ${SEED_PATH} → ${DB_PATH}`);
+} else {
+  // 시드 비활성 또는 시드 파일 없음 → 빈 DB로 시작 (스키마는 init()에서 생성)
+  console.log(`[DB] 빈 DB로 시작 (시드 ${seedDisabled ? '비활성화' : '없음'}). 스키마만 생성합니다: ${DB_PATH}`);
+}
+
+// 영속성 경고: 배포 환경인데 볼륨 경로(DB_PATH) 미지정이면 재배포마다 데이터가 사라짐
+const isDeployed = !!(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID ||
+                      process.env.RENDER || process.env.FLY_APP_NAME);
+if (isDeployed && !process.env.DB_PATH) {
+  console.warn('⚠️  [경고] DB_PATH 미설정: 컨테이너 내부 경로를 사용하므로 재배포 시 데이터가 초기화됩니다.');
+  console.warn('         영속 볼륨을 마운트하고 DB_PATH=/data/crm.db 를 설정하세요.');
 }
 
 const db = new Database(DB_PATH);
@@ -306,19 +329,40 @@ function init() {
 
 init();
 
-// admin 사용자 기본 비밀번호 설정 (최초 1회). 환경변수 ADMIN_PASSWORD 우선.
-(function ensureAdminPassword() {
+// 초기화 마커 (재시드 방지 / 운영 추적용). 데이터는 건드리지 않음.
+(function recordMeta() {
   try {
-    const admin = db.prepare('SELECT id, password_hash FROM users WHERE username = ?').get('admin');
-    if (!admin) return;
-    if (admin.password_hash) return;
+    db.exec(`CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT);`);
+    const inited = db.prepare("SELECT value FROM app_meta WHERE key='initialized_at'").get();
+    if (!inited) {
+      db.prepare("INSERT INTO app_meta (key,value) VALUES ('initialized_at', datetime('now'))").run();
+      console.log('[DB] 최초 초기화 기록 생성');
+    }
+    db.prepare("INSERT OR REPLACE INTO app_meta (key,value) VALUES ('last_boot_at', datetime('now'))").run();
+  } catch (e) { console.error('app_meta 기록 실패:', e.message); }
+})();
+
+// admin 계정 보장: 비어 있으면 생성, 비밀번호 없으면 설정. 기존 데이터/비밀번호는 절대 덮어쓰지 않음.
+(function ensureAdmin() {
+  try {
     const crypto = require('crypto');
-    const pwd = process.env.ADMIN_PASSWORD || 'Admin@2026';
-    const salt = crypto.randomBytes(16).toString('hex');
-    const hash = crypto.scryptSync(pwd, salt, 64).toString('hex');
-    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(`${salt}:${hash}`, admin.id);
-    console.log(`[Init] admin 계정 기본 비밀번호 설정 완료${process.env.ADMIN_PASSWORD ? ' (env)' : ' (default: Admin@2026)'}`);
-  } catch (e) { console.error('admin 비밀번호 설정 실패:', e.message); }
+    const makeHash = () => {
+      const pwd = process.env.ADMIN_PASSWORD || 'Admin@2026';
+      const salt = crypto.randomBytes(16).toString('hex');
+      const hash = crypto.scryptSync(pwd, salt, 64).toString('hex');
+      return `${salt}:${hash}`;
+    };
+    let admin = db.prepare('SELECT id, password_hash FROM users WHERE username = ?').get('admin');
+    if (!admin) {
+      // 완전 빈 DB(시드 비활성 등) → 로그인 가능하도록 admin 신규 생성
+      const r = db.prepare("INSERT INTO users (username, name, role, active, password_hash) VALUES ('admin','관리자','admin',1,?)").run(makeHash());
+      console.log(`[Init] admin 계정 신규 생성 + 비밀번호 설정${process.env.ADMIN_PASSWORD ? ' (env)' : ' (default: Admin@2026)'}`);
+    } else if (!admin.password_hash) {
+      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(makeHash(), admin.id);
+      console.log(`[Init] admin 비밀번호 설정${process.env.ADMIN_PASSWORD ? ' (env)' : ' (default: Admin@2026)'}`);
+    }
+    // 비밀번호가 이미 있으면 아무 것도 하지 않음 (데이터 보존)
+  } catch (e) { console.error('admin 계정 보장 실패:', e.message); }
 })();
 
 module.exports = db;

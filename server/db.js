@@ -71,6 +71,35 @@ if (isDeployed && !process.env.DB_PATH) {
   console.warn('         영속 볼륨을 마운트하고 DB_PATH=/data/crm.db 를 설정하세요.');
 }
 
+// ============================================================
+//  볼륨 영속성 자가진단 (배포 때마다 로그로 확인 가능)
+//   - DB_PATH 디렉터리에 .persist_marker 부팅 카운터 기록
+//   - 영구 볼륨이면 카운터가 배포마다 증가, 임시저장이면 매번 1 → 즉시 진단
+// ============================================================
+(function persistenceDiag() {
+  try {
+    const markerPath = path.join(path.dirname(DB_PATH), '.persist_marker.json');
+    let prev = null;
+    if (fs.existsSync(markerPath)) {
+      try { prev = JSON.parse(fs.readFileSync(markerPath, 'utf8')); } catch {}
+    }
+    const boot = (prev && prev.boot ? prev.boot : 0) + 1;
+    const firstSeen = (prev && prev.first_seen) ? prev.first_seen : new Date().toISOString();
+    fs.writeFileSync(markerPath, JSON.stringify({ boot, first_seen: firstSeen, db_path: DB_PATH, last_boot: new Date().toISOString() }));
+
+    console.log('──────────── DB 영속성 진단 ────────────');
+    console.log('  DB_PATH        :', DB_PATH);
+    console.log('  DB 파일 존재   :', fs.existsSync(DB_PATH), fs.existsSync(DB_PATH) ? `(${(fs.statSync(DB_PATH).size/1024).toFixed(0)}KB)` : '');
+    console.log('  마커 디렉터리  :', path.dirname(DB_PATH));
+    console.log('  부팅 횟수      :', boot, boot === 1 ? '← 첫 부팅(정상) 또는 ⚠️ 임시저장(매번 1이면 볼륨 미연결!)' : '← 볼륨 영속 정상 ✅');
+    if (isDeployed && boot === 1 && !process.env.FORCE_RESEED) {
+      console.warn('  ⚠️  배포 환경에서 부팅 카운터가 1입니다. 이전 배포의 데이터가 사라졌다면 DB_PATH가 볼륨 마운트 경로 안에 있지 않은 것입니다.');
+      console.warn('     확인: 볼륨 Mount path 와 DB_PATH 디렉터리가 일치해야 함 (예: 볼륨 /data + DB_PATH /data/crm.db)');
+    }
+    console.log('─────────────────────────────────────────');
+  } catch (e) { console.error('영속성 진단 실패:', e.message); }
+})();
+
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');

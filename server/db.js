@@ -23,6 +23,8 @@ if (!fs.existsSync(DB_DIR))  fs.mkdirSync(DB_DIR, { recursive: true });
 //     강제 제어:
 //       · SEED_ON_FIRST_RUN=1  → 운영에서도 DB가 없을 때 1회 시드 (의도적 초기 적재)
 //       · SEED_DISABLED=1      → 어디서든 시드 완전 비활성화
+//       · FORCE_RESEED=1       → 기존 운영 DB를 시드로 1회 강제 덮어쓰기(개발 DB 복제).
+//                                기존 DB는 .bak-<시각> 으로 백업. 작업 후 반드시 변수 제거!
 // ============================================================
 const isDeployed = !!(process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_PROJECT_ID ||
                       process.env.RENDER || process.env.FLY_APP_NAME ||
@@ -33,9 +35,25 @@ if (process.env.SEED_DISABLED === '1' || process.env.NO_SEED === '1') seedEnable
 else if (process.env.SEED_ON_FIRST_RUN === '1') seedEnabled = true;
 else seedEnabled = !isDeployed;   // 운영 기본 OFF, 로컬 기본 ON
 
+const forceReseed = process.env.FORCE_RESEED === '1' || process.env.SEED_FORCE === '1';
 const dbExisted = fs.existsSync(DB_PATH);
 
-if (dbExisted) {
+if (forceReseed && fs.existsSync(SEED_PATH)) {
+  // ── 1회용 강제 복제: 개발 스냅샷(initial.db) → 운영 DB 덮어쓰기 ──
+  if (dbExisted) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const bak = `${DB_PATH}.bak-${stamp}`;
+    try { fs.copyFileSync(DB_PATH, bak); console.warn(`[FORCE_RESEED] 기존 DB 백업 생성: ${bak}`); }
+    catch (e) { console.error('[FORCE_RESEED] 백업 실패:', e.message); }
+  }
+  // 기존 DB/WAL/SHM 제거 후 시드 복사
+  for (const ext of ['', '-wal', '-shm']) {
+    try { if (fs.existsSync(DB_PATH + ext)) fs.unlinkSync(DB_PATH + ext); } catch (e) {}
+  }
+  fs.copyFileSync(SEED_PATH, DB_PATH);
+  console.warn('🔴 [FORCE_RESEED] 운영 DB를 개발 스냅샷(initial.db)으로 강제 덮어썼습니다.');
+  console.warn('   ⚠️  완료 후 Railway에서 FORCE_RESEED 환경변수를 반드시 제거(또는 0)하세요. 안 그러면 매 배포마다 데이터가 초기화됩니다!');
+} else if (dbExisted) {
   // 이미 데이터가 있는 DB → 스키마만 갱신, 데이터 절대 보존
   console.log(`[DB] 기존 DB 사용 (데이터 보존, 스키마만 마이그레이션): ${DB_PATH}`);
 } else if (seedEnabled && fs.existsSync(SEED_PATH)) {

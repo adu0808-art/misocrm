@@ -46,6 +46,7 @@ app.use('/api/sales', require('./routes/sales'));
 app.use('/api/purchases', require('./routes/purchases'));
 app.use('/api/project-solutions', require('./routes/project_solutions'));
 app.use('/api/project-resources', require('./routes/project_resources'));
+app.use('/api/admin', require('./routes/admin'));
 app.use('/api/research', require('./routes/research'));
 app.use('/api/research-members', require('./routes/research_members'));
 app.use('/api/research-costs', require('./routes/research_costs'));

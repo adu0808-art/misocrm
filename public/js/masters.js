@@ -6,7 +6,8 @@ const TABS = [
   { key: 'employees', label: '직원' },
   { key: 'customers', label: '고객사' },
   { key: 'types',     label: '프로젝트 유형' },
-  { key: 'solutions', label: '솔루션' }
+  { key: 'solutions', label: '솔루션' },
+  { key: 'backup',    label: 'DB 백업' }
 ];
 
 const currentTab = qs('tab', 'divisions');
@@ -253,12 +254,17 @@ function showRelatedProjectsModal(msg, projects) {
 }
 async function editUser(id, divs) {
   const item = id ? await api.get('/api/masters/accounts/' + id) : { username:'', name:'', division_id:'', role:'admin', email:'', phone:'', active:1 };
+  let divOpts = divisionsForYear(divs, new Date().getFullYear());
+  if (item.division_id && !divOpts.some(d => d.id == item.division_id)) {
+    const cur = divs.find(d => d.id == item.division_id);
+    if (cur) divOpts = [cur, ...divOpts];
+  }
   openModal(id ? '사용자 수정' : '사용자 추가', `
     <div class="grid-form">
       <div class="form-row"><label class="required">ID</label><input id="m_username" value="${item.username || ''}"></div>
       <div class="form-row"><label class="required">이름</label><input id="m_name" value="${item.name || ''}"></div>
-      <div class="form-row"><label>소속본부</label><select id="m_div"><option value="">선택</option>${divs.map(d=>`<option value="${d.id}" ${d.id==item.division_id?'selected':''}>${d.name}</option>`).join('')}</select></div>
-      <div class="form-row"><label>역할</label><select id="m_role"><option value="admin" ${item.role==='admin'?'selected':''}>관리자</option><option value="pm" ${item.role==='pm'?'selected':''}>PM</option><option value="sales" ${item.role==='sales'?'selected':''}>영업</option><option value="user" ${item.role==='user'?'selected':''}>일반</option></select></div>
+      <div class="form-row"><label>소속본부</label><select id="m_div"><option value="">선택</option>${divOpts.map(d=>`<option value="${d.id}" ${d.id==item.division_id?'selected':''}>${d.name}</option>`).join('')}</select></div>
+      <div class="form-row"><label>역할</label><select id="m_role"><option value="admin" ${item.role==='admin'?'selected':''}>관리자</option><option value="head" ${item.role==='head'?'selected':''}>본부장</option><option value="pm" ${item.role==='pm'?'selected':''}>PM</option><option value="sales" ${item.role==='sales'?'selected':''}>영업</option><option value="user" ${item.role==='user'?'selected':''}>일반</option></select></div>
       <div class="form-row"><label>이메일</label><input id="m_email" value="${item.email || ''}"></div>
       <div class="form-row"><label>전화</label><input id="m_phone" value="${item.phone || ''}"></div>
       <div class="form-row"><label>활성</label><select id="m_active"><option value="1" ${item.active?'selected':''}>활성</option><option value="0" ${!item.active?'selected':''}>비활성</option></select></div>
@@ -1037,5 +1043,44 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
-const loaders = { divisions: loadDivisions, users: loadUsers, employees: loadEmployees, customers: loadCustomers, types: loadTypes, solutions: loadSolutions };
+// ===== DB 백업 =====
+function loadBackup() {
+  body.innerHTML = `
+    <div class="card" style="max-width:640px;">
+      <div class="card-header"><h3>💾 DB 백업</h3></div>
+      <div class="card-body">
+        <p class="text-muted" style="font-size:13px;line-height:1.7;">
+          현재 데이터베이스 전체를 하나의 SQLite 파일(<code>crm-backup-YYYY-MM-DD.db</code>)로 내려받습니다.<br>
+          내려받은 파일은 로컬 개발 환경의 <code>db/crm.db</code> 로 교체해 사용할 수 있습니다.
+        </p>
+        <div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;padding:10px 12px;font-size:12px;color:#92400e;margin:12px 0;">
+          ⚠️ 백업 파일에는 <strong>모든 운영 데이터</strong>가 포함됩니다. 관리자만 다운로드할 수 있으며, 파일 취급에 주의하세요.
+        </div>
+        <button class="btn btn-primary" id="dlBackupBtn">⬇ DB 백업 다운로드</button>
+        <span id="backupStatus" class="text-muted" style="font-size:12px;margin-left:10px;"></span>
+      </div>
+    </div>`;
+  body.querySelector('#dlBackupBtn').onclick = async () => {
+    const btn = body.querySelector('#dlBackupBtn');
+    const st = body.querySelector('#backupStatus');
+    btn.disabled = true; st.textContent = '백업 생성 중...';
+    try {
+      const r = await fetch('/api/admin/backup');
+      if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || '다운로드 실패'); }
+      const blob = await r.blob();
+      const cd = r.headers.get('content-disposition') || '';
+      const m = cd.match(/filename="?([^"]+)"?/);
+      const fname = m ? m[1] : ('crm-backup-' + new Date().toISOString().slice(0,10) + '.db');
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = fname; document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+      st.textContent = '다운로드 완료: ' + fname;
+      toast('DB 백업이 다운로드되었습니다.', 'success');
+    } catch (e) {
+      st.textContent = ''; toast(e.message || '백업 실패', 'error');
+    } finally { btn.disabled = false; }
+  };
+}
+
+const loaders = { divisions: loadDivisions, users: loadUsers, employees: loadEmployees, customers: loadCustomers, types: loadTypes, solutions: loadSolutions, backup: loadBackup };
 (loaders[currentTab] || loadDivisions)();

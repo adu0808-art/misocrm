@@ -25,7 +25,8 @@ async function load() {
   const tMap = Object.fromEntries(targets.map(t => [t.division_id, t]));
   _expensesMap = Object.fromEntries(expenses.map(e => [e.division_id, e]));
 
-  document.getElementById('tgtTbody').innerHTML = divisions.map(d => {
+  const yearDivs = divisionsForYear(divisions, year);
+  document.getElementById('tgtTbody').innerHTML = yearDivs.map(d => {
     const t = tMap[d.id] || {};
     const e = _expensesMap[d.id] || {};
     return `

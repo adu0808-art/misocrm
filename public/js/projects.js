@@ -27,12 +27,12 @@ function setupFilters() {
   for (let y = cur + 1; y >= cur - 3; y--) years.push({ value: y, label: y + '년' });
   sels.year = new SearchableSelect(document.getElementById('ss_year'),
     { options: years, value: cur, placeholder: '전체 연도', allowClear: false,
-      onChange: () => { setupTable(); load(); } });
+      onChange: () => { refreshDivOptions(); setupTable(); load(); } });
 
   sels.sales = new SearchableSelect(document.getElementById('ss_sales'),
     { options: users.map(u => ({ value: u.id, label: u.name })), placeholder: '선택안함' });
   sels.div = new SearchableSelect(document.getElementById('ss_div'),
-    { options: divisions.map(d => ({ value: d.id, label: d.name })), placeholder: '선택안함' });
+    { options: divisionsForYear(divisions, cur).map(d => ({ value: d.id, label: d.name })), placeholder: '선택안함' });
   sels.mgr = new SearchableSelect(document.getElementById('ss_mgr'),
     { options: users.map(u => ({ value: u.id, label: u.name })), placeholder: '선택안함' });
   sels.pm = new SearchableSelect(document.getElementById('ss_pm'),
@@ -49,6 +49,17 @@ function setupFilters() {
   document.getElementById('f_types_wrap').innerHTML =
     `<label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:normal;"><input type="radio" name="f_type" value="" checked style="width:auto;"> 전체</label>` +
     types.map(t => `<label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:normal;"><input type="radio" name="f_type" value="${t.id}" style="width:auto;"> ${t.name}${t.is_internal?' <small style="color:#999">(내부)</small>':''}</label>`).join('');
+}
+
+// 선택 연도에 유효한 본부만 주관본부 드롭다운에 표시
+function refreshDivOptions() {
+  if (!sels.div) return;
+  const year = Number(sels.year ? sels.year.getValue() : new Date().getFullYear());
+  const opts = divisionsForYear(divisions, year);
+  const cur = sels.div.getValue();
+  sels.div.setOptions(opts.map(d => ({ value: d.id, label: d.name })));
+  // 현재 선택 본부가 해당 연도에 유효하지 않으면 초기화
+  if (cur && !opts.some(d => String(d.id) === String(cur))) sels.div.setValue('');
 }
 
 function setupTable() {
@@ -304,7 +315,7 @@ function openNew() {
   let custSelect = null;
   openModal('신규 프로젝트', `
     <div class="grid-form">
-      <div class="form-row"><label class="required">프로젝트 코드</label><input id="m_code" placeholder="예: P26201"></div>
+      <div class="form-row"><label>프로젝트 코드</label><input id="m_code" placeholder="자동 부여 (유형+연도+번호)" disabled style="background:#f1f5f9;color:var(--text-muted);"></div>
       <div class="form-row"><label class="required">프로젝트명</label><input id="m_name"></div>
       <div class="form-row"><label>유형</label><select id="m_type">${types.map(t=>`<option value="${t.id}">${t.name}</option>`).join('')}</select></div>
       <div class="form-row"><label>상태</label><select id="m_status">${STATUSES.map(s=>`<option ${s==='기획단계'?'selected':''}>${s}</option>`).join('')}</select></div>
@@ -319,7 +330,6 @@ function openNew() {
       <div class="form-row"><label>총사업비</label>${currencyHtml('m_budget', 0)}</div>
     </div>`, async (m) => {
     const body = {
-      project_code: m.querySelector('#m_code').value.trim(),
       project_name: m.querySelector('#m_name').value.trim(),
       project_type_id: Number(m.querySelector('#m_type').value),
       status: m.querySelector('#m_status').value,
@@ -330,9 +340,9 @@ function openNew() {
       participation_type: '참여',
       has_solution: 'N'
     };
-    if (!body.project_code || !body.project_name) { toast('코드/이름 필수', 'error'); return false; }
-    const r = await api.post('/api/projects', body);
-    toast('등록되었습니다.', 'success');
+    if (!body.project_name) { toast('프로젝트명은 필수입니다.', 'error'); return false; }
+    const r = await api.post('/api/projects', body);   // 코드는 서버에서 자동 부여
+    toast('등록되었습니다. 코드: ' + (r.project_code || '자동부여'), 'success');
     setTimeout(() => openDetailPopup(r.id, () => load()), 400);
   });
 

@@ -175,7 +175,18 @@ router.get('/summary', (req, res) => {
   recvDiv.forEach(r => { const x = ensureDiv(r.division_id, r.division_name); x.recv = r.amount; x.recv_overdue = r.overdue; x.recv_cnt = r.cnt; });
   payDiv.forEach(r => { const x = ensureDiv(r.division_id, r.division_name); x.pay = r.amount; x.pay_overdue = r.overdue; x.pay_cnt = r.cnt; });
   opexDiv.forEach(r => { const x = ensureDiv(r.division_id, r.division_name); x.opex = r.amount; });
+
+  // 선택 연도에 유효한 본부만 (valid_from/valid_to). 본부 미지정(null)은 유지.
+  let validDivSet = null;
+  if (year) {
+    const y = parseInt(year, 10);
+    validDivSet = new Set(db.prepare(`
+      SELECT id FROM divisions
+      WHERE (valid_from IS NULL OR valid_from <= ?) AND (valid_to IS NULL OR valid_to >= ?)
+    `).all(y, y).map(r => r.id));
+  }
   const byDivision = Object.values(divMap)
+    .filter(d => !validDivSet || d.division_id == null || validDivSet.has(Number(d.division_id)))
     .map(d => ({ ...d, outflow: d.pay + d.opex, net: d.recv - d.pay - d.opex }))
     .sort((a,b) => (b.recv + b.pay + b.opex) - (a.recv + a.pay + a.opex));
 

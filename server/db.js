@@ -384,6 +384,23 @@ function init() {
   // project_types: 내부개발 여부
   addColumnIfMissing('project_types', 'is_internal', 'INTEGER DEFAULT 0');
 
+  // divisions: 연도별 유효기간 (NULL = 제한 없음)
+  addColumnIfMissing('divisions', 'valid_from', 'INTEGER'); // 유효 시작연도
+  addColumnIfMissing('divisions', 'valid_to',   'INTEGER'); // 유효 종료연도
+
+  // solutions: 정렬 순서 (드래그 정렬)
+  addColumnIfMissing('solutions', 'sort_order', 'INTEGER DEFAULT 0');
+  // 최초 1회: sort_order 미설정(0/NULL) 솔루션을 코드순으로 max 뒤에 채번
+  {
+    const zeros = db.prepare('SELECT id FROM solutions WHERE sort_order IS NULL OR sort_order = 0 ORDER BY code, id').all();
+    if (zeros.length) {
+      let mx = db.prepare('SELECT COALESCE(MAX(sort_order),0) AS m FROM solutions').get().m;
+      const upd = db.prepare('UPDATE solutions SET sort_order=? WHERE id=?');
+      const tx = db.transaction(() => zeros.forEach(r => upd.run(++mx, r.id)));
+      tx();
+    }
+  }
+
   // users: 비밀번호 / 최근 로그인
   addColumnIfMissing('users', 'password_hash',  'TEXT');
   addColumnIfMissing('users', 'last_login_at',  'DATETIME');

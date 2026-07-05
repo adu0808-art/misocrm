@@ -547,7 +547,7 @@ function recalcSalesUnpaid() {
       <tr style="background:#f1f5f9;font-weight:700;">
         <td colspan="2" style="text-align:right;">합계 (${rowCount}건)</td>
         <td style="text-align:right;font-variant-numeric:tabular-nums;">${fmtWon(sumSales)}</td>
-        <td style="text-align:right;font-variant-numeric:tabular-nums;color:${remaining < 0 ? 'var(--danger)' : 'inherit'};">${fmtWon(sumUnpaid)}</td>
+        <td></td>
         <td colspan="4" style="text-align:right;font-size:11px;color:var(--text-muted);font-weight:400;">
           입금완료 ${fmtWon(sumPaid)} · 총 매출 ${fmtWon(total)}
         </td>

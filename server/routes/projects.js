@@ -132,11 +132,38 @@ router.get('/:id', (req, res) => {
   res.json(row);
 });
 
+// 프로젝트 코드 자동 생성: {유형코드}{YY}{일련번호3} (예: P26001)
+function generateProjectCode(typeId, year) {
+  let prefix = 'P';
+  if (typeId) {
+    const t = db.prepare('SELECT code FROM project_types WHERE id=?').get(typeId);
+    if (t && t.code) prefix = String(t.code).trim().toUpperCase();
+  }
+  const yy = String((Number(year) || new Date().getFullYear()) % 100).padStart(2, '0');
+  const base = `${prefix}${yy}`;
+  const rows = db.prepare('SELECT project_code FROM projects WHERE project_code LIKE ?').all(base + '%');
+  let max = 0;
+  for (const r of rows) {
+    const m = String(r.project_code).slice(base.length).match(/^(\d+)/);
+    if (m) { const n = parseInt(m[1], 10); if (n > max) max = n; }
+  }
+  return `${base}${String(max + 1).padStart(3, '0')}`;
+}
+
 router.post('/', (req, res) => {
-  const values = PROJECT_FIELDS.map(f => req.body[f] ?? null);
+  const body = { ...req.body };
+  // 코드 미입력 시 자동 부여 (충돌 시 다음 번호로 재시도)
+  if (!body.project_code || !String(body.project_code).trim()) {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const code = generateProjectCode(body.project_type_id, body.business_year);
+      const dup = db.prepare('SELECT 1 FROM projects WHERE project_code=?').get(code);
+      if (!dup) { body.project_code = code; break; }
+    }
+  }
+  const values = PROJECT_FIELDS.map(f => body[f] ?? null);
   const placeholders = PROJECT_FIELDS.map(() => '?').join(',');
   const result = db.prepare(`INSERT INTO projects (${PROJECT_FIELDS.join(',')}) VALUES (${placeholders})`).run(...values);
-  res.json({ id: result.lastInsertRowid });
+  res.json({ id: result.lastInsertRowid, project_code: body.project_code });
 });
 
 router.put('/:id', (req, res) => {

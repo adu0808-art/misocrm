@@ -256,40 +256,58 @@ async function openDivisionDetail(divId) {
   } catch (e) { toast('조회 실패: ' + e.message, 'error'); return; }
 
   const { division, summary: s, projects, monthly, statusDist, topCust } = data;
+  let ddUnit = '원';                        // 본부 상세 팝업 기본 단위: 원 (원/억원 토글)
+  const ff = (n) => fmtUnit(n, ddUnit);     // 팝업 전용 포맷터
+  let chart = null;
+
   const back = document.createElement('div');
   back.className = 'modal-backdrop open';
   back.innerHTML = `
     <div class="modal" style="max-width:1100px;width:96vw;height:90vh;max-height:90vh;display:flex;flex-direction:column;">
       <div class="modal-header" style="background:#2563eb;color:#fff;border-bottom:none;">
         <h3 style="color:#fff;">🏢 ${esc(division.name)} <small style="opacity:.85;font-weight:400;font-size:12px;margin-left:8px;">${year}년 상세 실적</small></h3>
-        <button class="close-x" style="color:#fff;">&times;</button>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <select id="dd_unit" title="화폐 단위" style="width:auto;height:32px;padding:2px 10px;border-radius:6px;border:none;">
+            <option value="원" selected>원</option>
+            <option value="억원">억원</option>
+          </select>
+          <button class="close-x" style="color:#fff;">&times;</button>
+        </div>
       </div>
-      <div class="modal-body" style="overflow:auto;flex:1;">
+      <div class="modal-body" style="overflow:auto;flex:1;" id="dd_body"></div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" data-act="close">닫기</button>
+      </div>
+    </div>`;
+  document.body.appendChild(back);
+
+  function renderBody() {
+    back.querySelector('#dd_body').innerHTML = `
         <!-- KPI -->
         <div class="stats-grid" style="grid-template-columns:repeat(auto-fill, minmax(200px, 1fr));margin-bottom:18px;">
           <div class="stat-card primary">
             <div class="label">매출</div>
-            <div class="value">${f(s.actual_revenue)}</div>
-            <div class="sub">목표 ${f(s.target_revenue)} · ${fmtPct(s.achievement_rate)}</div>
+            <div class="value">${ff(s.actual_revenue)}</div>
+            <div class="sub">목표 ${ff(s.target_revenue)} · ${fmtPct(s.achievement_rate)}</div>
           </div>
           <div class="stat-card warning">
             <div class="label">매입</div>
-            <div class="value">${f(s.purchase)}</div>
+            <div class="value">${ff(s.purchase)}</div>
             <div class="sub">계산서 발행일 기준</div>
           </div>
           <div class="stat-card ${s.gross_profit < 0 ? 'danger' : 'success'}">
             <div class="label">매출이익</div>
-            <div class="value">${f(s.gross_profit)}</div>
-            <div class="sub">목표 ${f(s.gross_profit_target)} · ${fmtPct(s.gross_profit_rate)}</div>
+            <div class="value">${ff(s.gross_profit)}</div>
+            <div class="sub">목표 ${ff(s.gross_profit_target)} · ${fmtPct(s.gross_profit_rate)}</div>
           </div>
           <div class="stat-card ${s.operating_profit < 0 ? 'danger' : 'success'}">
             <div class="label">영업이익</div>
-            <div class="value">${f(s.operating_profit)}</div>
-            <div class="sub">목표 ${f(s.target_profit)} · ${fmtPct(s.profit_rate)}</div>
+            <div class="value">${ff(s.operating_profit)}</div>
+            <div class="sub">목표 ${ff(s.target_profit)} · ${fmtPct(s.profit_rate)}</div>
           </div>
           <div class="stat-card">
             <div class="label">판관비 / 공통비</div>
-            <div class="value" style="font-size:16px;">${f(s.sga)}<br><small style="font-size:11px;color:var(--text-muted);">공통 ${f(s.common_cost)}</small></div>
+            <div class="value" style="font-size:16px;">${ff(s.sga)}<br><small style="font-size:11px;color:var(--text-muted);">공통 ${ff(s.common_cost)}</small></div>
           </div>
         </div>
 
@@ -318,7 +336,7 @@ async function openDivisionDetail(divId) {
                 <tr>
                   <td><span class="dd-cust-link" data-cid="${c.customer_id}" style="cursor:pointer;color:#2563eb;text-decoration:underline;">${esc(c.customer_name)}</span></td>
                   <td class="num">${c.cnt}</td>
-                  <td class="num">${f(c.actual)}</td>
+                  <td class="num">${ff(c.actual)}</td>
                 </tr>`).join('')}</tbody>
             </table>` : '<div class="empty" style="padding:20px;font-size:12px;">데이터 없음</div>'}
           </div>
@@ -336,20 +354,52 @@ async function openDivisionDetail(divId) {
                     <td><span class="badge badge-${p.status}">${p.status}</span></td>
                     <td>${esc(p.project_name)}</td>
                     <td>${esc(p.customer_name||'-')}</td>
-                    <td class="num">${f(p.year_sales)}</td>
-                    <td class="num">${f(p.expected_revenue)}</td>
+                    <td class="num">${ff(p.year_sales)}</td>
+                    <td class="num">${ff(p.expected_revenue)}</td>
                   </tr>`).join('') : '<tr><td colspan="6" class="empty">프로젝트가 없습니다.</td></tr>'}
                 </tbody>
               </table>
             </div>
           </div>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-primary" data-act="close">닫기</button>
-      </div>
-    </div>`;
-  document.body.appendChild(back);
+        </div>`;
+
+    // 프로젝트 클릭 → 상세 팝업
+    back.querySelectorAll('.dd-proj-link').forEach(el => el.onclick = () => {
+      if (typeof openDetailPopup === 'function') openDetailPopup(el.dataset.pid, () => load());
+    });
+    // 고객사 클릭 → 고객사 정보 팝업
+    back.querySelectorAll('.dd-cust-link').forEach(el => el.onclick = () => {
+      const cid = el.dataset.cid;
+      if (typeof openCustomerInfoPopup === 'function') openCustomerInfoPopup(cid);
+      else toast('고객사 정보는 프로젝트 관리 페이지에서 확인 가능합니다.', 'success');
+    });
+
+    // 월별 차트 (선택 단위 반영)
+    if (chart) { chart.destroy(); chart = null; }
+    const factor = UNIT_FACTORS[ddUnit];
+    const ctx = back.querySelector('#dd_chart');
+    if (window.Chart && ctx) {
+      chart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: monthly.map(m => m.month + '월'),
+          datasets: [
+            { label: '매출', data: monthly.map(m => m.sales / factor), backgroundColor: '#2563eb' },
+            { label: '매입', data: monthly.map(m => m.purchase / factor), backgroundColor: '#f97316' }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'bottom' },
+            tooltip: { callbacks: { label: c => c.dataset.label + ': ' + c.parsed.y.toLocaleString('ko-KR') + ddUnit } }
+          },
+          scales: { y: { title: { display: true, text: '금액 (' + ddUnit + ')' } } }
+        }
+      });
+    }
+  }
+  renderBody();
 
   const close = () => { if (chart) chart.destroy(); back.remove(); };
   back.querySelector('.close-x').onclick = close;
@@ -357,43 +407,7 @@ async function openDivisionDetail(divId) {
   back.addEventListener('click', e => { if (e.target === back) close(); });
   const onEsc = (ev) => { if (ev.key === 'Escape') { close(); document.removeEventListener('keydown', onEsc); } };
   document.addEventListener('keydown', onEsc);
-
-  // 프로젝트 클릭 → 상세 팝업
-  back.querySelectorAll('.dd-proj-link').forEach(el => el.onclick = () => {
-    const pid = el.dataset.pid;
-    if (typeof openDetailPopup === 'function') openDetailPopup(pid, () => load());
-  });
-  // 고객사 클릭 → 고객사 정보 팝업 (projects.js 의 함수 — dashboard에선 없으므로 fallback toast)
-  back.querySelectorAll('.dd-cust-link').forEach(el => el.onclick = () => {
-    const cid = el.dataset.cid;
-    if (typeof openCustomerInfoPopup === 'function') openCustomerInfoPopup(cid);
-    else toast('고객사 정보는 프로젝트 관리 페이지에서 확인 가능합니다.', 'success');
-  });
-
-  // 월별 차트
-  const factor = UNIT_FACTORS[unit];
-  const ctx = back.querySelector('#dd_chart');
-  let chart = null;
-  if (window.Chart && ctx) {
-    chart = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: monthly.map(m => m.month + '월'),
-        datasets: [
-          { label: '매출', data: monthly.map(m => m.sales / factor), backgroundColor: '#2563eb' },
-          { label: '매입', data: monthly.map(m => m.purchase / factor), backgroundColor: '#f97316' }
-        ]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: {
-          legend: { position: 'bottom' },
-          tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y.toLocaleString('ko-KR') + unit } }
-        },
-        scales: { y: { title: { display: true, text: '금액 (' + unit + ')' } } }
-      }
-    });
-  }
+  back.querySelector('#dd_unit').onchange = (e) => { ddUnit = e.target.value; renderBody(); };
 }
 
 init();

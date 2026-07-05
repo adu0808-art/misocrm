@@ -57,7 +57,7 @@ router.post('/divisions/reorder', (req, res) => {
 });
 
 router.use('/divisions', crud('divisions',
-  ['code', 'name', 'sort_order', 'active'], { sortBy: 't.sort_order, t.id' }));
+  ['code', 'name', 'sort_order', 'active', 'valid_from', 'valid_to'], { sortBy: 't.sort_order, t.id' }));
 
 // users는 password 처리를 위해 별도 라우터로 구성
 (function userRouter() {
@@ -103,8 +103,27 @@ router.use('/divisions', crud('divisions',
     res.json({ ok: true });
   });
   r.delete('/:id', (req, res) => {
+    const uid = req.params.id;
+    // 관련 사업(프로젝트) 확인: 주관자/PM/영업담당으로 참조 중이면 삭제 불가 + 목록 반환
+    const projects = db.prepare(`
+      SELECT p.id, p.project_code, p.project_name, p.status, p.business_year,
+        TRIM(
+          (CASE WHEN p.manager_id=?  THEN '주관 ' ELSE '' END) ||
+          (CASE WHEN p.pm_id=?       THEN 'PM '  ELSE '' END) ||
+          (CASE WHEN p.sales_rep_id=? THEN '영업' ELSE '' END)
+        ) AS roles
+      FROM projects p
+      WHERE p.manager_id=? OR p.pm_id=? OR p.sales_rep_id=?
+      ORDER BY p.business_year DESC, p.project_code
+    `).all(uid, uid, uid, uid, uid, uid);
+    if (projects.length) {
+      return res.status(400).json({
+        error: `관련 사업 ${projects.length}건이 있어 삭제할 수 없습니다. (비활성 처리 권장)`,
+        projects
+      });
+    }
     try {
-      db.prepare('DELETE FROM users WHERE id=?').run(req.params.id);
+      db.prepare('DELETE FROM users WHERE id=?').run(uid);
       res.json({ ok: true });
     } catch (e) {
       res.status(400).json({ error: '참조 중인 데이터가 있어 삭제할 수 없습니다.' });
@@ -123,6 +142,16 @@ router.use('/customers', crud('customers', [
 router.use('/project-types', crud('project_types',
   ['code', 'name', 'sort_order', 'is_internal'], { sortBy: 't.sort_order, t.id' }));
 
+// 솔루션 순서 일괄 갱신 (드래그 정렬) — crud 마운트보다 먼저 등록
+router.post('/solutions/reorder', (req, res) => {
+  const ids = Array.isArray(req.body.ids) ? req.body.ids : [];
+  if (!ids.length) return res.status(400).json({ error: 'ids 배열이 필요합니다.' });
+  const upd = db.prepare('UPDATE solutions SET sort_order=? WHERE id=?');
+  const tx = db.transaction((list) => { list.forEach((id, idx) => upd.run(idx + 1, id)); });
+  tx(ids.map(Number));
+  res.json({ ok: true });
+});
+
 router.use('/solutions', crud('solutions', [
   'code', 'name', 'vendor', 'spec',
   'base_consumer_price', 'recommended_price', 'standard_price', 'max_discount',
@@ -130,7 +159,9 @@ router.use('/solutions', crud('solutions', [
   'notes', 'active'
 ], {
   join: 'LEFT JOIN divisions d ON t.sales_division_id = d.id',
-  selectExtras: ', d.name AS sales_division_name'
+  selectExtras: ', d.name AS sales_division_name',
+  // 정렬: sort_order 순 (미설정 0/NULL은 맨 뒤)
+  sortBy: '(CASE WHEN t.sort_order IS NULL OR t.sort_order=0 THEN 999999 ELSE t.sort_order END), t.id'
 }));
 
 module.exports = router;

@@ -6,7 +6,14 @@ const router = express.Router();
 router.get('/division-summary', (req, res) => {
   const year = parseInt(req.query.year, 10) || new Date().getFullYear();
 
-  const divisions = db.prepare('SELECT * FROM divisions WHERE active=1 ORDER BY sort_order, id').all();
+  // 해당 연도에 유효한 본부만 (valid_from/valid_to, NULL=제한없음)
+  const divisions = db.prepare(`
+    SELECT * FROM divisions
+    WHERE active=1
+      AND (valid_from IS NULL OR valid_from <= ?)
+      AND (valid_to   IS NULL OR valid_to   >= ?)
+    ORDER BY sort_order, id
+  `).all(year, year);
 
   // 실매출(actual_revenue) - 수주완료/수행종료 기준
   const actualRevenueRows = db.prepare(`

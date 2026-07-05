@@ -220,9 +220,12 @@ const api = {
     if (body !== undefined) opts.body = JSON.stringify(body);
     const r = await fetch(path, opts);
     if (!r.ok) {
-      let msg = 'API 오류';
-      try { msg = (await r.json()).error || msg; } catch {}
-      throw new Error(msg);
+      let payload = {};
+      try { payload = await r.json(); } catch {}
+      const err = new Error(payload.error || 'API 오류');
+      err.data = payload;      // 서버가 함께 보낸 상세(예: 관련 사업 목록) 접근용
+      err.status = r.status;
+      throw err;
     }
     if (r.status === 204) return null;
     const ct = r.headers.get('content-type') || '';
@@ -267,6 +270,28 @@ function fmtUnit(n, unit) {
 function qs(name, def) {
   const u = new URL(location.href);
   return u.searchParams.get(name) ?? def ?? '';
+}
+
+// ===== 사업본부 연도별 유효성 =====
+// valid_from/valid_to (연도, NULL=제한없음) 기준으로 해당 연도에 유효한 본부인지 판단
+function isDivisionValidForYear(d, year) {
+  if (!d || !year) return true;
+  const y = Number(year);
+  const from = d.valid_from != null && d.valid_from !== '' ? Number(d.valid_from) : null;
+  const to   = d.valid_to   != null && d.valid_to   !== '' ? Number(d.valid_to)   : null;
+  return (from == null || from <= y) && (to == null || to >= y);
+}
+function divisionsForYear(list, year) {
+  return (list || []).filter(d => isDivisionValidForYear(d, year));
+}
+// 유효기간 표기: null~null="전체", 2024~null="2024~", null~2025="~2025", 같으면 "2024"
+function divisionValidLabel(d) {
+  const f = d.valid_from != null && d.valid_from !== '' ? d.valid_from : null;
+  const t = d.valid_to   != null && d.valid_to   !== '' ? d.valid_to   : null;
+  if (f == null && t == null) return '전체';
+  if (f != null && t != null) return f === t ? String(f) : `${f}~${t}`;
+  if (f != null) return `${f}~`;
+  return `~${t}`;
 }
 
 // Modal helper
@@ -378,6 +403,9 @@ window.UNIT_FACTORS = UNIT_FACTORS;
 window.bindCurrencyInputs = bindCurrencyInputs;
 window.currencyValue = currencyValue;
 window.currencyHtml = currencyHtml;
+window.isDivisionValidForYear = isDivisionValidForYear;
+window.divisionsForYear = divisionsForYear;
+window.divisionValidLabel = divisionValidLabel;
 
 // 컬럼 표시/순서 관리 모달
 // columns: [{key, label, visible}]  → onApply(updatedColumns)

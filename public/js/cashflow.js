@@ -7,6 +7,7 @@ let granularity = 'month';   // 'month' | 'day'  (상세 표 단위)
 let chart = null;
 let curDetail = 'recv';
 let summaryCache = null;
+let cfDivisions = [];   // 전체 본부 (연도 필터용)
 
 function f(n) { return fmtUnit(n, unit); }
 
@@ -32,14 +33,22 @@ async function init() {
     renderPeriodTable();
   });
 
-  // 본부 필터 채우기
-  try {
-    const divs = await api.get('/api/masters/divisions');
-    const sel = document.getElementById('fltDiv');
-    divs.forEach(d => sel.innerHTML += `<option value="${d.id}">${esc(d.name)}</option>`);
-  } catch {}
+  // 본부 필터 채우기 (선택 연도 기준으로 갱신)
+  try { cfDivisions = await api.get('/api/masters/divisions'); } catch { cfDivisions = []; }
+  populateDivFilter();
 
   load();
+}
+
+// 선택 연도에 유효한 본부만 본부 필터에 표시
+function populateDivFilter() {
+  const sel = document.getElementById('fltDiv');
+  if (!sel) return;
+  const prev = sel.value;
+  const list = divisionsForYear(cfDivisions, selectedYear);
+  sel.innerHTML = '<option value="">전체 본부</option>' +
+    list.map(d => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
+  if (prev && list.some(d => String(d.id) === String(prev))) sel.value = prev;
 }
 
 async function load() {
@@ -61,6 +70,7 @@ async function load() {
     sel.value = selectedYear;
     yearsLoaded = true;
   }
+  populateDivFilter();   // 선택 연도 유효 본부로 필터 갱신
   render();
   loadDetail();
 }

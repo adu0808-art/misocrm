@@ -24,29 +24,47 @@ let divisionsCache = null;
 async function getDivisions() { return divisionsCache || (divisionsCache = await api.get('/api/masters/divisions')); }
 
 // ===== 사업본부 =====
+let divCheckYear = '';   // 유효성 확인 연도 ('' = 확인 안함)
 async function loadDivisions() {
   const list = await api.get('/api/masters/divisions');
+  const cur = new Date().getFullYear();
+  const yearOpts = ['<option value="">전체 (확인 안함)</option>'];
+  for (let y = cur + 2; y >= cur - 5; y--) yearOpts.push(`<option value="${y}" ${String(y) === String(divCheckYear) ? 'selected' : ''}>${y}년</option>`);
+  const validCnt = divCheckYear ? list.filter(d => isDivisionValidForYear(d, divCheckYear)).length : list.length;
+
   body.innerHTML = `
     <div class="flex-between mb-16">
-      <div class="text-muted">총 ${list.length}개 본부 <span style="font-size:12px;">· 행을 드래그하여 순서를 변경하면 정렬값이 자동 저장됩니다.</span></div>
-      <button class="btn btn-primary" id="addBtn">+ 본부 추가</button>
+      <div class="text-muted">총 ${list.length}개 본부 ${divCheckYear ? `· <strong style="color:var(--primary);">${divCheckYear}년 유효 ${validCnt}개</strong>` : ''} <span style="font-size:12px;">· 행을 드래그하여 순서를 변경하면 정렬값이 자동 저장됩니다.</span></div>
+      <div class="flex gap-8" style="align-items:center;">
+        <label class="text-muted" style="font-size:12px;">유효성 확인 연도</label>
+        <select id="divCheckYear" style="width:auto;">${yearOpts.join('')}</select>
+        <button class="btn btn-primary" id="addBtn">+ 본부 추가</button>
+      </div>
     </div>
     <div class="table-wrap"><table class="data" id="divTable">
-      <thead><tr><th style="width:36px;"></th><th>코드</th><th>본부명</th><th>정렬</th><th>활성</th><th></th></tr></thead>
-      <tbody id="divDragBody">${list.map(d => `
-        <tr data-id="${d.id}" draggable="true" class="drag-row">
+      <thead><tr><th style="width:36px;"></th><th>코드</th><th>본부명</th><th>유효기간</th><th>정렬</th><th>활성</th><th></th></tr></thead>
+      <tbody id="divDragBody">${list.map(d => {
+        const valid = !divCheckYear || isDivisionValidForYear(d, divCheckYear);
+        const dim = divCheckYear && !valid ? ' style="opacity:.4;"' : '';
+        const yearBadge = divCheckYear
+          ? (valid ? '<span class="badge badge-수주완료">유효</span>' : '<span class="badge badge-수주실패">미유효</span>')
+          : '';
+        return `
+        <tr data-id="${d.id}" draggable="true" class="drag-row"${dim}>
           <td class="drag-handle" title="드래그하여 이동">⠿</td>
           <td>${d.code}</td>
-          <td>${d.name}</td>
+          <td>${d.name} ${yearBadge}</td>
+          <td>${divisionValidLabel(d)}</td>
           <td class="sort-val">${d.sort_order ?? 0}</td>
           <td>${d.active ? '<span class="badge badge-수주완료">활성</span>' : '<span class="badge badge-수주실패">비활성</span>'}</td>
           <td class="actions">
             <button class="btn btn-sm" data-edit="${d.id}">수정</button>
             <button class="btn btn-sm btn-danger" data-del="${d.id}">삭제</button>
           </td>
-        </tr>`).join('') || `<tr><td colspan="6" class="empty">등록된 본부가 없습니다.</td></tr>`}
+        </tr>`; }).join('') || `<tr><td colspan="7" class="empty">등록된 본부가 없습니다.</td></tr>`}
       </tbody></table></div>`;
   body.querySelector('#addBtn').onclick = () => editDivision(null);
+  body.querySelector('#divCheckYear').onchange = (e) => { divCheckYear = e.target.value; loadDivisions(); };
   body.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => editDivision(b.dataset.edit));
   body.querySelectorAll('[data-del]').forEach(b => b.onclick = () => delItem('/api/masters/divisions/' + b.dataset.del, loadDivisions));
   bindDivisionDrag();
@@ -95,21 +113,31 @@ function bindDivisionDrag() {
   });
 }
 async function editDivision(id) {
-  const item = id ? await api.get('/api/masters/divisions/' + id) : { code: '', name: '', sort_order: 0, active: 1 };
+  const item = id ? await api.get('/api/masters/divisions/' + id) : { code: '', name: '', sort_order: 0, active: 1, valid_from: '', valid_to: '' };
   openModal(id ? '본부 수정' : '본부 추가', `
     <div class="grid-form">
       <div class="form-row"><label class="required">코드</label><input id="m_code" value="${item.code || ''}"></div>
       <div class="form-row"><label class="required">본부명</label><input id="m_name" value="${item.name || ''}"></div>
       <div class="form-row"><label>정렬</label><input id="m_sort" type="number" value="${item.sort_order ?? 0}"></div>
       <div class="form-row"><label>활성</label><select id="m_active"><option value="1" ${item.active ? 'selected' : ''}>활성</option><option value="0" ${!item.active ? 'selected' : ''}>비활성</option></select></div>
-    </div>`, async (m) => {
+      <div class="form-row"><label>유효 시작연도</label><input id="m_vfrom" type="number" placeholder="제한 없음" value="${item.valid_from ?? ''}"></div>
+      <div class="form-row"><label>유효 종료연도</label><input id="m_vto" type="number" placeholder="제한 없음" value="${item.valid_to ?? ''}"></div>
+    </div>
+    <p class="text-muted" style="font-size:12px;margin-top:8px;">· 연도를 비워두면 제한 없음(전 기간 유효)입니다. 예) 2024년 신설·2026년 폐지 → 시작 2024 / 종료 2025</p>`, async (m) => {
+    const vf = m.querySelector('#m_vfrom').value.trim();
+    const vt = m.querySelector('#m_vto').value.trim();
     const body = {
       code: m.querySelector('#m_code').value.trim(),
       name: m.querySelector('#m_name').value.trim(),
       sort_order: Number(m.querySelector('#m_sort').value || 0),
-      active: Number(m.querySelector('#m_active').value)
+      active: Number(m.querySelector('#m_active').value),
+      valid_from: vf === '' ? null : Number(vf),
+      valid_to: vt === '' ? null : Number(vt)
     };
     if (!body.code || !body.name) { toast('코드와 이름은 필수입니다.', 'error'); return false; }
+    if (body.valid_from != null && body.valid_to != null && body.valid_from > body.valid_to) {
+      toast('유효 시작연도가 종료연도보다 클 수 없습니다.', 'error'); return false;
+    }
     if (id) await api.put('/api/masters/divisions/' + id, body);
     else await api.post('/api/masters/divisions', body);
     divisionsCache = null;
@@ -119,32 +147,79 @@ async function editDivision(id) {
 }
 
 // ===== 사용자 =====
+let showInactiveUsers = false;   // 비활성 사용자 포함 여부
 async function loadUsers() {
-  const [list, divs] = await Promise.all([api.get('/api/masters/users'), getDivisions()]);
+  const [all, divs] = await Promise.all([api.get('/api/masters/users'), getDivisions()]);
   const divMap = Object.fromEntries(divs.map(d => [d.id, d.name]));
+  const inactiveCnt = all.filter(u => !u.active).length;
+  const list = showInactiveUsers ? all : all.filter(u => u.active);
   body.innerHTML = `
     <div class="flex-between mb-16">
-      <div class="text-muted">총 ${list.length}명</div>
-      <button class="btn btn-primary" id="addBtn">+ 사용자 추가</button>
+      <div class="text-muted">총 ${list.length}명${showInactiveUsers ? '' : ` <span style="font-size:12px;">(활성만 · 비활성 ${inactiveCnt}명 숨김)</span>`}</div>
+      <div class="flex gap-8" style="align-items:center;">
+        <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;">
+          <input type="checkbox" id="chkInactive" style="width:auto;" ${showInactiveUsers ? 'checked' : ''}> 비활성 사용자 포함
+        </label>
+        <button class="btn btn-primary" id="addBtn">+ 사용자 추가</button>
+      </div>
     </div>
     <div class="table-wrap"><table class="data">
-      <thead><tr><th>ID</th><th>이름</th><th>소속</th><th>역할</th><th>이메일</th><th>전화</th><th></th></tr></thead>
+      <thead><tr><th>ID</th><th>이름</th><th>소속</th><th>역할</th><th>이메일</th><th>전화</th><th>상태</th><th></th></tr></thead>
       <tbody>${list.map(u => `
-        <tr>
+        <tr${u.active ? '' : ' style="opacity:.55;"'}>
           <td>${u.username}</td><td>${u.name}</td>
           <td>${divMap[u.division_id] || ''}</td>
           <td>${u.role || ''}</td>
           <td>${u.email || ''}</td>
           <td>${u.phone || ''}</td>
+          <td>${u.active ? '<span class="badge badge-수주완료">활성</span>' : '<span class="badge badge-수주실패">비활성</span>'}</td>
           <td class="actions">
             <button class="btn btn-sm" data-edit="${u.id}">수정</button>
             <button class="btn btn-sm btn-danger" data-del="${u.id}">삭제</button>
           </td>
-        </tr>`).join('') || `<tr><td colspan="7" class="empty">등록된 사용자가 없습니다.</td></tr>`}
+        </tr>`).join('') || `<tr><td colspan="8" class="empty">표시할 사용자가 없습니다.</td></tr>`}
       </tbody></table></div>`;
+  body.querySelector('#chkInactive').onchange = (e) => { showInactiveUsers = e.target.checked; loadUsers(); };
   body.querySelector('#addBtn').onclick = () => editUser(null, divs);
   body.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => editUser(b.dataset.edit, divs));
-  body.querySelectorAll('[data-del]').forEach(b => b.onclick = () => delItem('/api/masters/users/' + b.dataset.del, loadUsers));
+  body.querySelectorAll('[data-del]').forEach(b => b.onclick = () => delUser(b.dataset.del));
+}
+
+// 사용자 삭제 — 관련 사업이 있으면 사업 리스트를 보여줌
+async function delUser(id) {
+  if (!confirm('정말 삭제하시겠습니까?')) return;
+  try {
+    await api.del('/api/masters/users/' + id);
+    toast('삭제되었습니다.', 'success');
+    loadUsers();
+  } catch (e) {
+    const projs = e.data && e.data.projects;
+    if (Array.isArray(projs) && projs.length) {
+      showRelatedProjectsModal(e.message, projs);
+    } else {
+      toast(e.message, 'error');
+    }
+  }
+}
+
+function showRelatedProjectsModal(msg, projects) {
+  const rows = projects.map(p => `
+    <tr>
+      <td>${esc(p.project_code || '')}</td>
+      <td>${esc(p.project_name || '')}</td>
+      <td style="text-align:center;">${esc(p.roles || '')}</td>
+      <td style="text-align:center;"><span class="badge badge-${esc(p.status || '')}">${esc(p.status || '')}</span></td>
+      <td style="text-align:center;">${p.business_year || ''}</td>
+    </tr>`).join('');
+  openModal(`삭제 불가 — 관련 사업 ${projects.length}건`, `
+    <p style="color:var(--danger);font-size:13px;margin-bottom:10px;">${esc(msg)}</p>
+    <p class="text-muted" style="font-size:12px;margin-bottom:10px;">이 사용자가 주관/PM/영업담당으로 지정된 사업입니다. 삭제하려면 아래 사업들에서 담당을 변경하거나, 사용자를 <strong>비활성</strong> 처리하세요.</p>
+    <div class="table-wrap" style="max-height:360px;overflow:auto;">
+      <table class="data">
+        <thead><tr><th>사업코드</th><th>사업명</th><th>담당</th><th>진행상태</th><th>사업년도</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`, () => true, { saveText: '확인' });
 }
 async function editUser(id, divs) {
   const item = id ? await api.get('/api/masters/users/' + id) : { username:'', name:'', division_id:'', role:'user', email:'', phone:'', active:1 };
@@ -251,7 +326,7 @@ async function loadCustomers() {
   const render = (filtered) => {
     document.getElementById('custBody').innerHTML = filtered.map(c => `
       <tr>
-        <td><strong>${c.name}</strong></td>
+        <td><span class="cust-name-link" data-cid="${c.id}" title="관련 사업 보기" style="cursor:pointer;color:#2563eb;text-decoration:underline;font-weight:600;">${esc(c.name)}</span></td>
         <td>${c.industry || ''}</td>
         <td>${c.legal_type || ''}</td>
         <td>${c.business_no || ''}</td>
@@ -266,6 +341,7 @@ async function loadCustomers() {
       </tr>`).join('') || `<tr><td colspan="9" class="empty">등록된 고객사가 없습니다.</td></tr>`;
     document.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => editCustomer(b.dataset.edit));
     document.querySelectorAll('[data-del]').forEach(b => b.onclick = () => delItem('/api/masters/customers/' + b.dataset.del, loadCustomers));
+    document.querySelectorAll('.cust-name-link').forEach(b => b.onclick = () => showCustomerProjects(b.dataset.cid));
   };
   render(list);
   document.getElementById('addBtn').onclick = () => editCustomer(null);
@@ -273,6 +349,69 @@ async function loadCustomers() {
     const kw = e.target.value.toLowerCase();
     render(list.filter(c => !kw || (c.name || '').toLowerCase().includes(kw)));
   });
+}
+
+// 고객사명 클릭 → 관련 사업 서머리 팝업
+async function showCustomerProjects(customerId) {
+  let customer = null, projList = [], contacts = [];
+  try {
+    [customer, projList, contacts] = await Promise.all([
+      api.get('/api/masters/customers/' + customerId),
+      api.get('/api/projects?customer_id=' + customerId),
+      api.get('/api/customer-contacts?customer_id=' + customerId).catch(() => [])
+    ]);
+  } catch (e) { toast('고객사 정보 조회 실패: ' + e.message, 'error'); return; }
+
+  const totalExp = projList.reduce((s, p) => s + (p.expected_revenue || 0), 0);
+  const totalRev = projList.reduce((s, p) => s + (p.actual_revenue || 0), 0);
+  const byStatus = {};
+  projList.forEach(p => { byStatus[p.status] = (byStatus[p.status] || 0) + 1; });
+
+  const infoRow = (label, val) => `<div><span style="color:#64748b;width:80px;display:inline-block;">${label}</span> ${esc(val || '-')}</div>`;
+
+  openModal(`🏢 ${esc(customer.name)} — 관련 사업 ${projList.length}건`, `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;margin-bottom:14px;font-size:13px;">
+      ${infoRow('법인구분', customer.legal_type)}
+      ${infoRow('기관유형', customer.industry)}
+      ${infoRow('사업자번호', customer.business_no)}
+      ${infoRow('대표자', customer.ceo_name)}
+      ${infoRow('상위도메인', customer.top_domain)}
+      ${infoRow('하위도메인', customer.sub_domain)}
+    </div>
+    ${contacts.length ? `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+      ${contacts.map(c => `<div style="border:1px solid var(--border);border-radius:6px;padding:5px 9px;font-size:12px;background:#f8fafc;">
+        ${c.is_primary ? '★ ' : ''}<strong>${esc(c.name || '')}</strong>${c.position ? ` <span class="text-muted">${esc(c.position)}</span>` : ''}${(c.mobile || c.phone) ? ` · ${esc(c.mobile || c.phone)}` : ''}
+      </div>`).join('')}
+    </div>` : ''}
+
+    <div style="display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
+      <div style="display:flex;gap:5px;flex-wrap:wrap;font-size:11px;">
+        ${Object.entries(byStatus).map(([s, c]) => `<span class="badge badge-${s}">${s} ${c}</span>`).join('')}
+      </div>
+      <div style="font-size:12px;color:var(--text-muted);">
+        예상매출 합계 <strong style="color:var(--primary);">${fmtWon(totalExp)}</strong> · 실매출 합계 <strong style="color:var(--success);">${fmtWon(totalRev)}</strong>
+      </div>
+    </div>
+
+    <div class="table-wrap" style="max-height:400px;overflow:auto;"><table class="data" style="margin:0;">
+      <thead><tr>
+        <th>코드</th><th style="min-width:200px;">사업명</th><th>본부</th><th>상태</th>
+        <th>사업시기</th><th class="num">예상매출</th><th class="num">실매출</th>
+      </tr></thead>
+      <tbody>${projList.length ? projList.map(p => `
+        <tr>
+          <td style="font-variant-numeric:tabular-nums;">${esc(p.project_code)}</td>
+          <td>${esc(p.project_name)}</td>
+          <td>${esc(p.division_name || '')}</td>
+          <td><span class="badge badge-${esc(p.status)}">${esc(p.status)}</span></td>
+          <td style="font-size:12px;">${p.start_date || '-'} ~ ${p.end_date || '-'}</td>
+          <td class="num">${fmtWon(p.expected_revenue)}</td>
+          <td class="num">${fmtWon(p.actual_revenue)}</td>
+        </tr>`).join('') : '<tr><td colspan="7" class="empty">관련 사업이 없습니다.</td></tr>'}
+      </tbody>
+    </table></div>
+  `, () => true, { saveText: '확인' });
 }
 async function editCustomer(id) {
   const item = id ? await api.get('/api/masters/customers/' + id) : { legal_type:'법인', industry:'민간' };
@@ -525,21 +664,33 @@ async function editType(id) {
 }
 
 // ===== 솔루션 =====
+let showInactiveSolutions = false;   // 비활성 솔루션 포함 여부
+let _solAll = [];                    // 전체 솔루션(정렬순) — 드래그 재정렬 시 숨김 항목 보존용
 async function loadSolutions() {
-  const [list, divs] = await Promise.all([api.get('/api/masters/solutions'), getDivisions()]);
+  const [all, divs] = await Promise.all([api.get('/api/masters/solutions'), getDivisions()]);
+  _solAll = all;
+  const inactiveCnt = all.filter(s => !s.active).length;
+  const list = showInactiveSolutions ? all : all.filter(s => s.active);
   body.innerHTML = `
     <div class="flex-between mb-16">
-      <div class="text-muted">총 ${list.length}개</div>
-      <button class="btn btn-primary" id="addBtn">+ 솔루션 추가</button>
+      <div class="text-muted">총 ${list.length}개${showInactiveSolutions ? '' : ` <span style="font-size:12px;">(활성만 · 비활성 ${inactiveCnt}개 숨김)</span>`} <span style="font-size:12px;">· 행을 드래그하여 순서를 변경하면 정렬값이 자동 저장됩니다.</span></div>
+      <div class="flex gap-8" style="align-items:center;">
+        <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;">
+          <input type="checkbox" id="chkInactiveSol" style="width:auto;" ${showInactiveSolutions ? 'checked' : ''}> 비활성 솔루션 포함
+        </label>
+        <button class="btn btn-primary" id="addBtn">+ 솔루션 추가</button>
+      </div>
     </div>
     <div class="table-wrap"><table class="data">
       <thead><tr>
+        <th style="width:36px;"></th>
         <th>코드</th><th>솔루션명</th><th class="num">표준판매단가</th><th class="num">내부원가</th>
-        <th class="num">최대할인율</th><th>판매</th><th>자사</th><th>매출귀속</th><th></th>
+        <th class="num">최대할인율</th><th>판매</th><th>자사</th><th>매출귀속</th><th>상태</th><th></th>
       </tr></thead>
-      <tbody>${list.map(s => `
-        <tr>
-          <td>${s.code || ''}</td>
+      <tbody id="solDragBody">${list.map(s => `
+        <tr data-id="${s.id}" draggable="true" class="drag-row"${s.active ? '' : ' style="opacity:.55;"'}>
+          <td class="drag-handle" title="드래그하여 이동">⠿</td>
+          <td><span class="sol-code-link" data-sid="${s.id}" data-code="${esc(s.code || s.name)}" title="관련 프로젝트 보기" style="cursor:pointer;color:#2563eb;text-decoration:underline;font-weight:600;">${s.code || '(코드없음)'}</span></td>
           <td><strong>${s.name}</strong>${s.spec ? `<br><small class="text-muted">${s.spec}</small>` : ''}</td>
           <td class="num">${fmtWon(s.standard_price)}</td>
           <td class="num">${fmtWon(s.internal_cost)}</td>
@@ -547,15 +698,88 @@ async function loadSolutions() {
           <td>${s.is_sellable === 'Y' ? 'Y' : 'N'}</td>
           <td>${s.is_internal === 'Y' ? 'Y' : 'N'}</td>
           <td>${s.sales_division_name || ''}</td>
+          <td>${s.active ? '<span class="badge badge-수주완료">활성</span>' : '<span class="badge badge-수주실패">비활성</span>'}</td>
           <td class="actions">
             <button class="btn btn-sm" data-edit="${s.id}">수정</button>
             <button class="btn btn-sm btn-danger" data-del="${s.id}">삭제</button>
           </td>
-        </tr>`).join('') || `<tr><td colspan="9" class="empty">등록된 솔루션이 없습니다.</td></tr>`}
+        </tr>`).join('') || `<tr><td colspan="11" class="empty">표시할 솔루션이 없습니다.</td></tr>`}
       </tbody></table></div>`;
+  body.querySelector('#chkInactiveSol').onchange = (e) => { showInactiveSolutions = e.target.checked; loadSolutions(); };
   body.querySelector('#addBtn').onclick = () => editSolution(null, divs);
   body.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => editSolution(b.dataset.edit, divs));
   body.querySelectorAll('[data-del]').forEach(b => b.onclick = () => delItem('/api/masters/solutions/' + b.dataset.del, loadSolutions));
+  body.querySelectorAll('.sol-code-link').forEach(b => b.onclick = () => showSolutionProjects(b.dataset.sid, b.dataset.code));
+  bindSolutionDrag();
+}
+
+function bindSolutionDrag() {
+  const tbody = document.getElementById('solDragBody');
+  if (!tbody) return;
+  let dragEl = null;
+  tbody.querySelectorAll('tr.drag-row').forEach(tr => {
+    tr.addEventListener('dragstart', () => { dragEl = tr; tr.classList.add('dragging'); });
+    tr.addEventListener('dragend', () => {
+      tr.classList.remove('dragging');
+      tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
+      dragEl = null;
+    });
+    tr.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (!dragEl || dragEl === tr) return;
+      const rect = tr.getBoundingClientRect();
+      const after = (e.clientY - rect.top) > rect.height / 2;
+      tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
+      tr.classList.add('drag-over');
+      if (after) tr.after(dragEl); else tr.before(dragEl);
+    });
+    tr.addEventListener('drop', (e) => e.preventDefault());
+  });
+  tbody.addEventListener('drop', async () => {
+    tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
+    const visibleIds = Array.from(tbody.querySelectorAll('tr.drag-row')).map(r => Number(r.dataset.id));
+    // 화면에 없는(비활성 숨김) 솔루션은 기존 정렬순 그대로 뒤에 붙여 누락 방지
+    const hiddenIds = _solAll
+      .filter(s => !visibleIds.includes(s.id))
+      .map(s => s.id);
+    const ids = [...visibleIds, ...hiddenIds];
+    try {
+      await api.post('/api/masters/solutions/reorder', { ids });
+      toast('솔루션 순서가 저장되었습니다.', 'success');
+    } catch (e) {
+      toast('순서 저장 실패: ' + e.message, 'error');
+      loadSolutions();
+    }
+  });
+}
+
+// 솔루션 코드 클릭 → 해당 솔루션이 납품된 관련 프로젝트 목록
+async function showSolutionProjects(solutionId, codeLabel) {
+  let projects = [];
+  try {
+    projects = await api.get('/api/projects?solution_id=' + solutionId);
+  } catch (e) { toast('조회 실패: ' + e.message, 'error'); return; }
+
+  const rows = projects.map(p => `
+    <tr>
+      <td style="font-variant-numeric:tabular-nums;">${esc(p.project_code)}</td>
+      <td><span class="badge badge-${esc(p.status)}">${esc(p.status)}</span></td>
+      <td>${esc(p.project_name)}</td>
+      <td>${esc(p.customer_name || '-')}</td>
+      <td>${esc(p.division_name || '-')}</td>
+      <td style="text-align:center;">${p.business_year || ''}</td>
+    </tr>`).join('');
+
+  openModal(`솔루션 [${esc(codeLabel)}] 관련 프로젝트 ${projects.length}건`, `
+    ${projects.length ? `
+    <div class="table-wrap" style="max-height:420px;overflow:auto;">
+      <table class="data">
+        <thead><tr><th>사업코드</th><th>진행상태</th><th style="min-width:220px;">사업명</th><th>고객사</th><th>주관본부</th><th>사업년도</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`
+    : '<div class="empty" style="padding:24px;">이 솔루션이 납품된 프로젝트가 없습니다.</div>'}
+  `, () => true, { saveText: '확인' });
 }
 async function editSolution(id, divs) {
   const item = id ? await api.get('/api/masters/solutions/' + id) : { is_sellable:'Y', is_internal:'Y', active:1 };

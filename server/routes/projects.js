@@ -45,6 +45,8 @@ function buildWhere(q) {
   if (q.has_solution)      add('p.has_solution = ?', q.has_solution);
   if (q.sw_only === '1')   add("p.sw_registered = 'Y'");
   if (q.exclude_internal === '1') add('IFNULL(pt.is_internal,0) = 0');
+  if (q.exclude_research === '1') add("(pt.code IS NULL OR pt.code != 'G')");   // 과제(정부지원) 제외
+  if (q.only_research === '1')    add("pt.code = 'G'");
   if (q.favorite_only === '1') add('p.is_favorite = 1');
   if (q.solution_id)       add('EXISTS (SELECT 1 FROM project_solutions ps WHERE ps.project_id = p.id AND ps.solution_id = ?)', q.solution_id);
   // 당해 매출 또는 매입이 있는 프로젝트만 (ys / yp는 BASE_SELECT의 LEFT JOIN 알리아스)

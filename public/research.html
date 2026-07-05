@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>과제 관리 | MISO CRM</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app">
+  <main class="main">
+    <div class="content">
+      <div class="card">
+        <div class="card-header">
+          <h2>과제 관리 <small class="text-muted" style="font-weight:400;font-size:12px;">정부 지원 · 국가 R&amp;D 과제</small></h2>
+          <button class="btn btn-primary" id="addBtn">+ 신규 과제</button>
+        </div>
+        <div class="card-body">
+          <div class="filter-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;align-items:end;">
+            <div><label class="text-muted" style="font-size:12px;">기준연도</label><div id="ss_year"></div></div>
+            <div><label class="text-muted" style="font-size:12px;">주관본부</label><div id="ss_div"></div></div>
+            <div><label class="text-muted" style="font-size:12px;">검색(과제명/번호)</label><input id="f_kw" placeholder="키워드"></div>
+            <div class="flex gap-8"><button class="btn btn-primary" id="searchBtn">조회</button><button class="btn" id="resetBtn">초기화</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header" style="flex-wrap:wrap;gap:8px;">
+          <div class="status-chips" id="stageChips"></div>
+          <div id="totalsInfo" class="text-muted" style="font-size:12px;"></div>
+        </div>
+        <div class="card-body" style="padding:0;">
+          <div class="table-wrap"><table class="data" id="resTable">
+            <thead><tr>
+              <th>과제번호</th><th style="min-width:240px;">과제명</th><th>주관본부</th><th>연구책임자</th>
+              <th>진행단계</th><th class="num">총연구비</th><th class="num" id="thYearFund">당해 연구비</th><th class="num">집행률</th><th class="num">참여</th><th>연구기간</th>
+            </tr></thead>
+            <tbody id="resBody"></tbody>
+            <tfoot id="resFoot"></tfoot>
+          </table></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="js/common.js"></script>
+<script src="js/components.js"></script>
+<script src="js/research.js"></script>
+</body>
+</html>

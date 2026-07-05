@@ -49,7 +49,7 @@ function setupFilters() {
 
   document.getElementById('f_types_wrap').innerHTML =
     `<label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:normal;"><input type="radio" name="f_type" value="" checked style="width:auto;"> 전체</label>` +
-    types.map(t => `<label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:normal;"><input type="radio" name="f_type" value="${t.id}" style="width:auto;"> ${t.name}${t.is_internal?' <small style="color:#999">(내부)</small>':''}</label>`).join('');
+    types.filter(t => t.code !== 'G').map(t => `<label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:normal;"><input type="radio" name="f_type" value="${t.id}" style="width:auto;"> ${t.name}${t.is_internal?' <small style="color:#999">(내부)</small>':''}</label>`).join('');
 }
 
 // 선택 연도에 유효한 본부만 주관본부 드롭다운에 표시
@@ -204,6 +204,7 @@ function resetFilters() {
 function buildParams() {
   const p = new URLSearchParams();
   const get = id => document.getElementById(id).value;
+  p.set('exclude_research', '1');   // 과제(정부지원)는 '과제 관리'에서 별도 관리
   if (sels.year.getValue())  p.set('year', sels.year.getValue());
   if (sels.sales.getValue()) p.set('sales_rep_id', sels.sales.getValue());
   if (sels.div.getValue())   p.set('division_id', sels.div.getValue());

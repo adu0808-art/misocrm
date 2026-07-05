@@ -40,6 +40,8 @@ router.get('/division-summary', (req, res) => {
   //   - 매입 = SUM(project_purchases.purchase_amount) WHERE YEAR(pp.invoice_date)=year
   //   - 수주완료 프로젝트만 대상
   const yearStr = String(year);
+  // 상용 매출/매입: 과제(G) 제외, 수주완료 프로젝트만
+  const NOT_RESEARCH = "p.project_type_id NOT IN (SELECT id FROM project_types WHERE code='G')";
   const realRows = db.prepare(`
     SELECT d.id AS division_id,
       COALESCE(s.sales,    0) AS sales,
@@ -50,7 +52,7 @@ router.get('/division-summary', (req, res) => {
       FROM project_sales ps
       JOIN projects p ON ps.project_id = p.id
       WHERE strftime('%Y', ps.invoice_date) = ?
-        AND p.status = '수주완료'
+        AND p.status = '수주완료' AND ${NOT_RESEARCH}
       GROUP BY p.division_id
     ) s ON s.division_id = d.id
     LEFT JOIN (
@@ -58,10 +60,21 @@ router.get('/division-summary', (req, res) => {
       FROM project_purchases pp
       JOIN projects p ON pp.project_id = p.id
       WHERE strftime('%Y', pp.invoice_date) = ?
-        AND p.status = '수주완료'
+        AND p.status = '수주완료' AND ${NOT_RESEARCH}
       GROUP BY p.division_id
     ) pu ON pu.division_id = d.id
   `).all(yearStr, yearStr);
+
+  // 연구과제비: 정부 지원 과제(code='G') 중 협약체결 이후(진행단계 기준)의 연구비
+  const researchRows = db.prepare(`
+    SELECT p.division_id, COALESCE(SUM(ps.sales_amount),0) AS research
+    FROM project_sales ps
+    JOIN projects p ON ps.project_id = p.id
+    JOIN project_types pt ON p.project_type_id = pt.id
+    WHERE strftime('%Y', ps.invoice_date) = ? AND pt.code = 'G'
+      AND p.research_stage IN ('선정','협약체결','수행중','최종평가','종료')
+    GROUP BY p.division_id
+  `).all(yearStr);
 
   const targets = db.prepare('SELECT * FROM sales_targets WHERE year=?').all(year);
   const expenses = db.prepare('SELECT * FROM division_expenses WHERE year=?').all(year);
@@ -70,6 +83,7 @@ router.get('/division-summary', (req, res) => {
   const actualMap = map(actualRevenueRows, 'division_id');
   const pipelineMap = map(pipelineRows, 'division_id');
   const realMap = map(realRows, 'division_id');
+  const researchMap = map(researchRows, 'division_id');
   const targetMap = map(targets, 'division_id');
   const expenseMap = map(expenses, 'division_id');
 
@@ -78,11 +92,13 @@ router.get('/division-summary', (req, res) => {
     const pipe = pipelineMap[d.id] || { won_expected: 0, pipeline_weighted: 0, pipeline_total: 0, project_count: 0 };
     const real = realMap[d.id] || { sales: 0, purchase: 0 };
     const exp = expenseMap[d.id] || { sga: 0, common_cost: 0 };
-    const sales = real.sales || 0;
-    const purchase = real.purchase || 0;
+    const commercial = real.sales || 0;                          // 상용 매출(과제 제외, 이익 계산용)
+    const research = (researchMap[d.id] || {}).research || 0;     // 연구과제비(과제 진행단계 기준)
+    const sales = commercial;                                    // (하위 계산 호환)
+    const purchase = real.purchase || 0;                         // 상용 매입(과제 제외)
     const sga = exp.sga || 0;
     const common = exp.common_cost || 0;
-    const grossProfit = sales - purchase;                        // 매출이익
+    const grossProfit = commercial + research - purchase;        // 매출이익 = 상용매출 + 연구과제비 - 매입
     const grossProfitTarget = (target.target_profit || 0) + sga + common; // 매출이익목표
     const opProfit = grossProfit - sga - common;                 // 영업이익
     const forecast = (pipe.won_expected || 0) + (pipe.pipeline_weighted || 0);
@@ -93,7 +109,8 @@ router.get('/division-summary', (req, res) => {
       project_count: pipe.project_count,
       target_revenue: target.target_revenue || 0,
       target_profit: target.target_profit || 0,
-      actual_revenue: sales,
+      actual_revenue: commercial,      // 매출 표시 = 상용(연구과제비 제외)
+      research_revenue: research,       // 연구과제비(별도 항목)
       purchase: purchase,
       gross_profit: grossProfit,
       gross_profit_target: grossProfitTarget,
@@ -103,7 +120,7 @@ router.get('/division-summary', (req, res) => {
       forecast_revenue: forecast,
       pipeline_weighted: pipe.pipeline_weighted || 0,
       pipeline_total: pipe.pipeline_total || 0,
-      achievement_rate: target.target_revenue ? (sales / target.target_revenue * 100) : 0,
+      achievement_rate: target.target_revenue ? (commercial / target.target_revenue * 100) : 0,
       forecast_rate: target.target_revenue ? (forecast / target.target_revenue * 100) : 0,
       gross_profit_rate: grossProfitTarget ? (grossProfit / grossProfitTarget * 100) : 0,
       profit_rate: target.target_profit ? (opProfit / target.target_profit * 100) : 0
@@ -115,6 +132,7 @@ router.get('/division-summary', (req, res) => {
     target_revenue: acc.target_revenue + r.target_revenue,
     target_profit: acc.target_profit + r.target_profit,
     actual_revenue: acc.actual_revenue + r.actual_revenue,
+    research_revenue: acc.research_revenue + r.research_revenue,
     purchase: acc.purchase + r.purchase,
     gross_profit: acc.gross_profit + r.gross_profit,
     gross_profit_target: acc.gross_profit_target + r.gross_profit_target,
@@ -124,7 +142,7 @@ router.get('/division-summary', (req, res) => {
     forecast_revenue: acc.forecast_revenue + r.forecast_revenue,
     pipeline_weighted: acc.pipeline_weighted + r.pipeline_weighted,
     project_count: acc.project_count + r.project_count
-  }), { target_revenue: 0, target_profit: 0, actual_revenue: 0, purchase: 0, gross_profit: 0, gross_profit_target: 0, sga: 0, common_cost: 0, operating_profit: 0, forecast_revenue: 0, pipeline_weighted: 0, project_count: 0 });
+  }), { target_revenue: 0, target_profit: 0, actual_revenue: 0, research_revenue: 0, purchase: 0, gross_profit: 0, gross_profit_target: 0, sga: 0, common_cost: 0, operating_profit: 0, forecast_revenue: 0, pipeline_weighted: 0, project_count: 0 });
   total.achievement_rate = total.target_revenue ? total.actual_revenue / total.target_revenue * 100 : 0;
   total.forecast_rate = total.target_revenue ? total.forecast_revenue / total.target_revenue * 100 : 0;
   total.gross_profit_rate = total.gross_profit_target ? total.gross_profit / total.gross_profit_target * 100 : 0;
@@ -174,18 +192,29 @@ router.get('/division-detail', (req, res) => {
 
   const yearStr = String(year);
 
-  // 당해 매출 (수주완료 + invoice_date 연도 일치)
+  // 당해 매출 (수주완료 + invoice_date 연도 일치, 과제 제외)
   const salesRow = db.prepare(`
     SELECT COALESCE(SUM(ps.sales_amount),0) AS total
     FROM project_sales ps JOIN projects p ON ps.project_id=p.id
     WHERE strftime('%Y', ps.invoice_date)=? AND p.division_id=? AND p.status='수주완료'
+      AND p.project_type_id NOT IN (SELECT id FROM project_types WHERE code='G')
   `).get(yearStr, divId);
 
-  // 당해 매입
+  // 연구과제비 (정부 지원 과제 code='G' 중 협약체결 이후 진행단계)
+  const researchRow = db.prepare(`
+    SELECT COALESCE(SUM(ps.sales_amount),0) AS total
+    FROM project_sales ps JOIN projects p ON ps.project_id=p.id
+    JOIN project_types pt ON p.project_type_id=pt.id
+    WHERE strftime('%Y', ps.invoice_date)=? AND p.division_id=? AND pt.code='G'
+      AND p.research_stage IN ('선정','협약체결','수행중','최종평가','종료')
+  `).get(yearStr, divId);
+
+  // 당해 매입 (과제 제외)
   const purcRow = db.prepare(`
     SELECT COALESCE(SUM(pp.purchase_amount),0) AS total
     FROM project_purchases pp JOIN projects p ON pp.project_id=p.id
     WHERE strftime('%Y', pp.invoice_date)=? AND p.division_id=? AND p.status='수주완료'
+      AND p.project_type_id NOT IN (SELECT id FROM project_types WHERE code='G')
   `).get(yearStr, divId);
 
   // 본부 소속 프로젝트 (사업년도가 맞거나 당해 거래가 있는 것)
@@ -255,11 +284,13 @@ router.get('/division-detail', (req, res) => {
     ORDER BY actual DESC, expected DESC LIMIT 10
   `).all(divId, year);
 
-  // 합계 / 파생값 계산
-  const sales = salesRow.total || 0;
+  // 합계 / 파생값 계산 (매출/매입은 과제 제외, 연구과제비는 진행단계 기준 별도)
+  const commercial = salesRow.total || 0;            // 상용 매출(과제 제외)
+  const research = researchRow.total || 0;           // 연구과제비(협약체결 이후)
+  const sales = commercial;
   const purchase = purcRow.total || 0;
   const sga = exp.sga || 0, common = exp.common_cost || 0;
-  const gp = sales - purchase;
+  const gp = commercial + research - purchase;       // 매출이익 = 상용매출 + 연구과제비 - 매입
   const gpTarget = (target.target_profit || 0) + sga + common;
   const op = gp - sga - common;
 
@@ -268,7 +299,8 @@ router.get('/division-detail', (req, res) => {
     summary: {
       target_revenue: target.target_revenue || 0,
       target_profit: target.target_profit || 0,
-      actual_revenue: sales,
+      actual_revenue: commercial,        // 매출 표시 = 상용(연구과제비 제외)
+      research_revenue: research,         // 연구과제비(별도)
       purchase,
       gross_profit: gp,
       gross_profit_target: gpTarget,
@@ -276,7 +308,7 @@ router.get('/division-detail', (req, res) => {
       sga, common_cost: common,
       operating_profit: op,
       profit_rate: target.target_profit ? (op / target.target_profit * 100) : 0,
-      achievement_rate: target.target_revenue ? (sales / target.target_revenue * 100) : 0
+      achievement_rate: target.target_revenue ? (commercial / target.target_revenue * 100) : 0
     },
     projects, monthly, statusDist, topCust
   });

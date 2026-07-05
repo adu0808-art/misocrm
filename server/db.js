@@ -339,6 +339,38 @@ function init() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- 연구 참여인력 (과제 전용)
+    CREATE TABLE IF NOT EXISTS research_members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      name TEXT,
+      org TEXT,
+      role TEXT,
+      position TEXT,
+      participation_rate REAL DEFAULT 100,
+      start_date DATE,
+      end_date DATE,
+      annual_cost INTEGER DEFAULT 0,
+      labor_cost INTEGER DEFAULT 0,
+      note TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- 연구비 집행 (과제 전용, 비목별)
+    CREATE TABLE IF NOT EXISTS research_costs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      category TEXT,
+      item_name TEXT,
+      planned_amount INTEGER DEFAULT 0,
+      executed_amount INTEGER DEFAULT 0,
+      exec_date DATE,
+      vendor TEXT,
+      year_no INTEGER,
+      note TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     -- 로그인 계정 (직원 users 와 분리) — 프로젝트 FK와 무관
     CREATE TABLE IF NOT EXISTS accounts (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -384,6 +416,8 @@ function init() {
     CREATE INDEX IF NOT EXISTS idx_purchases_project ON project_purchases(project_id);
     CREATE INDEX IF NOT EXISTS idx_activities_project ON activities(project_id);
     CREATE INDEX IF NOT EXISTS idx_resources_project ON project_resources(project_id);
+    CREATE INDEX IF NOT EXISTS idx_rmembers_project ON research_members(project_id);
+    CREATE INDEX IF NOT EXISTS idx_rcosts_project ON research_costs(project_id);
   `);
 
   // ---- 확장 컬럼 마이그레이션 ----
@@ -476,6 +510,32 @@ function init() {
   addColumnIfMissing('projects', 'is_favorite', 'INTEGER DEFAULT 0');
   addColumnIfMissing('projects', 'top_domain',  'TEXT');
   addColumnIfMissing('projects', 'sub_domain',  'TEXT');
+
+  // projects: 과제(정부 지원 과제) 전용 컬럼 (상용 프로젝트는 NULL)
+  addColumnIfMissing('projects', 'research_stage',       'TEXT');    // 과제 진행 단계
+  addColumnIfMissing('projects', 'gov_fund',             'INTEGER'); // 정부출연금
+  addColumnIfMissing('projects', 'private_cash',         'INTEGER'); // 민간부담금(현금)
+  addColumnIfMissing('projects', 'private_inkind',       'INTEGER'); // 민간부담금(현물)
+  addColumnIfMissing('projects', 'specialized_agency',   'TEXT');    // 전문기관
+  addColumnIfMissing('projects', 'research_year_no',     'INTEGER'); // 현재 연차
+  addColumnIfMissing('projects', 'research_total_years', 'INTEGER'); // 총 연차
+
+  // 기존 과제(type=G): 상용 status → 과제 진행단계(research_stage) 최초 매핑 (미지정에 한해)
+  //   수주완료→협약체결, 수행종료→종료, 기획단계→기획, 영업/제안단계→신청.
+  //   수주실패/사업보류는 미지정 유지. 사용자가 지정한 단계는 덮어쓰지 않음(IS NULL 조건).
+  try {
+    db.prepare(`
+      UPDATE projects SET research_stage = CASE status
+          WHEN '수주완료' THEN '협약체결'
+          WHEN '수행종료' THEN '종료'
+          WHEN '기획단계' THEN '기획'
+          WHEN '영업단계' THEN '신청'
+          WHEN '제안단계' THEN '신청'
+          ELSE research_stage END
+        WHERE research_stage IS NULL
+          AND project_type_id IN (SELECT id FROM project_types WHERE code='G')
+    `).run();
+  } catch (e) { console.error('과제 단계 매핑 실패:', e.message); }
   for (const y of [2023,2024,2025,2026,2027,2028,2029,2030]) {
     addColumnIfMissing('projects', `y${y}`, 'INTEGER DEFAULT 0');
   }

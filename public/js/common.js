@@ -9,6 +9,9 @@ const NAV = [
     { href: 'projects.html', label: '프로젝트 관리' },
     { href: 'activities.html', label: '활동 이력' }
   ]},
+  { section: '연구/과제', items: [
+    { href: 'research.html', label: '과제 관리' }
+  ]},
   { section: '계획/실적', items: [
     { href: 'targets.html', label: '영업목표 / 판관비' }
   ]},

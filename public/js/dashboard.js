@@ -5,6 +5,7 @@ const DEFAULT_DIV_COLS = [
   { key: 'division_name',       label: '본부',          align: 'left',  visible: true },
   { key: 'target_revenue',      label: '매출목표',      align: 'right', visible: true },
   { key: 'actual_revenue',      label: '매출',          align: 'right', visible: true },
+  { key: 'research_revenue',    label: '연구과제비',    align: 'right', visible: true },
   { key: 'achievement_rate',    label: '매출달성률',    align: 'right', visible: true },
   { key: 'purchase',            label: '매입',          align: 'right', visible: true },
   { key: 'gross_profit',        label: '매출이익',      align: 'right', visible: true },
@@ -99,9 +100,14 @@ async function load() {
 function renderKPI(t) {
   document.getElementById('kpiCards').innerHTML = `
     <div class="stat-card primary">
-      <div class="label">매출 (${year}년 계산서 발행)</div>
+      <div class="label">매출 (${year}년 · 연구과제 제외)</div>
       <div class="value">${f(t.actual_revenue)}</div>
       <div class="sub">매출목표 ${f(t.target_revenue)} · 달성률 ${fmtPct(t.achievement_rate)}</div>
+    </div>
+    <div class="stat-card" style="border-left:3px solid #8b5cf6;">
+      <div class="label">연구과제비 (${year}년)</div>
+      <div class="value">${f(t.research_revenue || 0)}</div>
+      <div class="sub">정부 지원 과제 · 매출 별도</div>
     </div>
     <div class="stat-card warning">
       <div class="label">매입 (${year}년 계산서 발행)</div>
@@ -109,9 +115,9 @@ function renderKPI(t) {
       <div class="sub">발행일자 기준</div>
     </div>
     <div class="stat-card ${t.gross_profit < 0 ? 'danger' : 'success'}">
-      <div class="label">매출이익 (매출 − 매입)</div>
+      <div class="label">매출이익 (매출 + 연구과제비 − 매입)</div>
       <div class="value">${f(t.gross_profit)}</div>
-      <div class="sub">매출이익목표 ${f(t.gross_profit_target)}</div>
+      <div class="sub">매출이익목표 ${f(t.gross_profit_target)} · 연구과제 포함</div>
     </div>
     <div class="stat-card ${pctClass(t.gross_profit_rate)==='danger'?'danger':(pctClass(t.gross_profit_rate)==='success'?'success':'warning')}">
       <div class="label">매출이익달성률</div>
@@ -138,6 +144,7 @@ function renderDivTable(divs, total) {
     division_name: d => `<td><strong class="div-detail-link" data-did="${d.division_id}" style="cursor:pointer;color:#2563eb;text-decoration:underline;" title="클릭하여 상세 보기">${d.division_name}</strong></td>`,
     target_revenue: d => `<td class="num">${f(d.target_revenue)}</td>`,
     actual_revenue: d => `<td class="num">${f(d.actual_revenue)}</td>`,
+    research_revenue: d => `<td class="num" style="color:#7c3aed;">${f(d.research_revenue || 0)}</td>`,
     achievement_rate: d => `<td class="num" style="min-width:120px;">${progressBar(d.achievement_rate)}</td>`,
     purchase: d => `<td class="num">${f(d.purchase)}</td>`,
     gross_profit: d => `<td class="num ${d.gross_profit < 0 ? 'text-danger' : ''} fw-bold">${f(d.gross_profit)}</td>`,
@@ -153,6 +160,7 @@ function renderDivTable(divs, total) {
     division_name: () => `<td>합계</td>`,
     target_revenue: t => `<td class="num">${f(t.target_revenue)}</td>`,
     actual_revenue: t => `<td class="num">${f(t.actual_revenue)}</td>`,
+    research_revenue: t => `<td class="num" style="color:#7c3aed;">${f(t.research_revenue || 0)}</td>`,
     achievement_rate: t => `<td class="num">${fmtPct(t.achievement_rate)}</td>`,
     purchase: t => `<td class="num">${f(t.purchase)}</td>`,
     gross_profit: t => `<td class="num ${t.gross_profit < 0 ? 'text-danger' : ''}">${f(t.gross_profit)}</td>`,
@@ -286,9 +294,14 @@ async function openDivisionDetail(divId) {
         <!-- KPI -->
         <div class="stats-grid" style="grid-template-columns:repeat(auto-fill, minmax(200px, 1fr));margin-bottom:18px;">
           <div class="stat-card primary">
-            <div class="label">매출</div>
+            <div class="label">매출 (연구과제 제외)</div>
             <div class="value">${ff(s.actual_revenue)}</div>
             <div class="sub">목표 ${ff(s.target_revenue)} · ${fmtPct(s.achievement_rate)}</div>
+          </div>
+          <div class="stat-card" style="border-left:3px solid #8b5cf6;">
+            <div class="label">연구과제비</div>
+            <div class="value">${ff(s.research_revenue || 0)}</div>
+            <div class="sub">정부 지원 과제 · 매출 별도</div>
           </div>
           <div class="stat-card warning">
             <div class="label">매입</div>

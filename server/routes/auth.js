@@ -53,7 +53,7 @@ function lookupSession(token) {
            u.id, u.username, u.name, u.role, u.active, u.division_id,
            d.name AS division_name
     FROM sessions s
-    LEFT JOIN users u ON s.user_id = u.id
+    LEFT JOIN accounts u ON s.user_id = u.id
     LEFT JOIN divisions d ON u.division_id = d.id
     WHERE s.token = ? AND datetime(s.expires_at) > datetime('now')
   `).get(token);
@@ -74,7 +74,7 @@ router.post('/login', (req, res) => {
     return res.status(400).json({ error: '아이디와 비밀번호를 입력하세요.' });
   }
   const user = db.prepare(
-    'SELECT id, username, name, role, password_hash, active FROM users WHERE username = ?'
+    'SELECT id, username, name, role, password_hash, active FROM accounts WHERE username = ?'
   ).get(username);
   if (!user || !user.active) {
     return res.status(401).json({ error: '아이디 또는 비밀번호가 올바르지 않습니다.' });
@@ -86,11 +86,32 @@ router.post('/login', (req, res) => {
     return res.status(401).json({ error: '아이디 또는 비밀번호가 올바르지 않습니다.' });
   }
   const { token } = createSession(user.id);
-  db.prepare('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?').run(user.id);
+  db.prepare('UPDATE accounts SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?').run(user.id);
   res.setHeader('Set-Cookie',
     `${SESSION_NAME}=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_DAYS * 24 * 3600}`
   );
   res.json({ ok: true, user: { id: user.id, username: user.username, name: user.name, role: user.role } });
+});
+
+// 사용자 신청 (공개) — 관리자 승인 대기열에 등록
+router.post('/signup', (req, res) => {
+  const { username, name, email, phone, password } = req.body || {};
+  const uname = (username || '').trim();
+  if (!uname || !(name || '').trim() || !password) {
+    return res.status(400).json({ error: '아이디·이름·비밀번호는 필수입니다.' });
+  }
+  const errPw = validateComplexity(password);
+  if (errPw) return res.status(400).json({ error: errPw });
+  if (db.prepare('SELECT 1 FROM accounts WHERE username = ?').get(uname)) {
+    return res.status(400).json({ error: '이미 사용 중인 아이디입니다.' });
+  }
+  if (db.prepare("SELECT 1 FROM account_requests WHERE username = ? AND status = 'pending'").get(uname)) {
+    return res.status(400).json({ error: '이미 신청 대기 중인 아이디입니다.' });
+  }
+  db.prepare(`INSERT INTO account_requests (username, name, email, phone, password_hash, status)
+              VALUES (?, ?, ?, ?, ?, 'pending')`)
+    .run(uname, name.trim(), (email || '').trim() || null, (phone || '').trim() || null, hashPassword(password));
+  res.json({ ok: true });
 });
 
 router.post('/logout', (req, res) => {
@@ -116,13 +137,13 @@ router.post('/change-password', (req, res) => {
   const s = lookupSession(token);
   if (!s) return res.status(401).json({ error: '인증되지 않음' });
   const { current, next } = req.body || {};
-  const user = db.prepare('SELECT id, password_hash FROM users WHERE id = ?').get(s.id);
+  const user = db.prepare('SELECT id, password_hash FROM accounts WHERE id = ?').get(s.id);
   if (!user || !verifyPassword(current, user.password_hash)) {
     return res.status(401).json({ error: '현재 비밀번호가 일치하지 않습니다.' });
   }
   const err = validateComplexity(next);
   if (err) return res.status(400).json({ error: err });
-  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(next), user.id);
+  db.prepare('UPDATE accounts SET password_hash = ? WHERE id = ?').run(hashPassword(next), user.id);
   // 다른 세션 모두 끊기
   db.prepare('DELETE FROM sessions WHERE user_id = ? AND token != ?').run(user.id, token);
   res.json({ ok: true });

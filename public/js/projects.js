@@ -29,14 +29,15 @@ function setupFilters() {
     { options: years, value: cur, placeholder: '전체 연도', allowClear: false,
       onChange: () => { refreshDivOptions(); setupTable(); load(); } });
 
+  const staff = users.filter(u => !u.is_login);   // 담당자는 직원(로그인 계정 제외)
   sels.sales = new SearchableSelect(document.getElementById('ss_sales'),
-    { options: users.map(u => ({ value: u.id, label: u.name })), placeholder: '선택안함' });
+    { options: staff.map(u => ({ value: u.id, label: u.name })), placeholder: '선택안함' });
   sels.div = new SearchableSelect(document.getElementById('ss_div'),
     { options: divisionsForYear(divisions, cur).map(d => ({ value: d.id, label: d.name })), placeholder: '선택안함' });
   sels.mgr = new SearchableSelect(document.getElementById('ss_mgr'),
-    { options: users.map(u => ({ value: u.id, label: u.name })), placeholder: '선택안함' });
+    { options: staff.map(u => ({ value: u.id, label: u.name })), placeholder: '선택안함' });
   sels.pm = new SearchableSelect(document.getElementById('ss_pm'),
-    { options: users.map(u => ({ value: u.id, label: u.name })), placeholder: '선택안함' });
+    { options: staff.map(u => ({ value: u.id, label: u.name })), placeholder: '선택안함' });
   sels.sol = new SearchableSelect(document.getElementById('ss_sol'),
     { options: solutions.map(s => ({ value: s.id, label: s.name })), placeholder: '선택안함' });
 

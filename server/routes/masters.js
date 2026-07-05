@@ -59,78 +59,138 @@ router.post('/divisions/reorder', (req, res) => {
 router.use('/divisions', crud('divisions',
   ['code', 'name', 'sort_order', 'active', 'valid_from', 'valid_to'], { sortBy: 't.sort_order, t.id' }));
 
-// users는 password 처리를 위해 별도 라우터로 구성
-(function userRouter() {
+// ── 직원 라우터(/users): 프로젝트 담당 스태프. 비밀번호 없음 ──
+(function employeeRouter() {
   const r = express.Router();
-  const auth = require('./auth');
-  const FIELDS = ['username', 'name', 'division_id', 'role', 'email', 'phone', 'active'];
+  const FIELDS = ['username', 'name', 'division_id', 'role', 'email', 'phone', 'active', 'is_login', 'position'];
+  const SELECT_COLS = 'id, username, name, division_id, role, email, phone, active, is_login, position, last_login_at, created_at';
 
-  // 비밀번호 해시는 응답에서 제외
-  r.get('/', (req, res) => {
-    res.json(db.prepare('SELECT id, username, name, division_id, role, email, phone, active, last_login_at, created_at FROM users ORDER BY id').all());
-  });
+  r.get('/', (req, res) => res.json(db.prepare(`SELECT ${SELECT_COLS} FROM users ORDER BY id`).all()));
   r.get('/:id', (req, res) => {
-    const row = db.prepare('SELECT id, username, name, division_id, role, email, phone, active, last_login_at, created_at FROM users WHERE id=?').get(req.params.id);
+    const row = db.prepare(`SELECT ${SELECT_COLS} FROM users WHERE id=?`).get(req.params.id);
     if (!row) return res.status(404).json({ error: 'Not found' });
     res.json(row);
   });
   r.post('/', (req, res) => {
     const values = FIELDS.map(f => req.body[f] ?? null);
-    const placeholders = FIELDS.map(() => '?').join(',');
+    try {
+      const result = db.prepare(`INSERT INTO users (${FIELDS.join(',')}) VALUES (${FIELDS.map(()=>'?').join(',')})`).run(...values);
+      res.json({ id: result.lastInsertRowid });
+    } catch (e) {
+      if (String(e.message).includes('UNIQUE')) return res.status(400).json({ error: `이미 존재하는 ID입니다: ${req.body.username}` });
+      res.status(400).json({ error: e.message });
+    }
+  });
+  r.put('/:id', (req, res) => {
+    const sets = FIELDS.map(f => `${f}=?`).join(',');
+    const values = FIELDS.map(f => req.body[f] ?? null);
+    try {
+      db.prepare(`UPDATE users SET ${sets} WHERE id=?`).run(...values, req.params.id);
+      res.json({ ok: true });
+    } catch (e) {
+      if (String(e.message).includes('UNIQUE')) return res.status(400).json({ error: `이미 존재하는 ID입니다: ${req.body.username}` });
+      res.status(400).json({ error: e.message });
+    }
+  });
+  r.delete('/:id', (req, res) => {
+    const uid = req.params.id;
+    const projects = db.prepare(`
+      SELECT p.id, p.project_code, p.project_name, p.status, p.business_year,
+        TRIM((CASE WHEN p.manager_id=? THEN '주관 ' ELSE '' END) ||
+             (CASE WHEN p.pm_id=? THEN 'PM ' ELSE '' END) ||
+             (CASE WHEN p.sales_rep_id=? THEN '영업' ELSE '' END)) AS roles
+      FROM projects p
+      WHERE p.manager_id=? OR p.pm_id=? OR p.sales_rep_id=?
+      ORDER BY p.business_year DESC, p.project_code
+    `).all(uid, uid, uid, uid, uid, uid);
+    if (projects.length) {
+      return res.status(400).json({ error: `관련 사업 ${projects.length}건이 있어 삭제할 수 없습니다. (비활성 처리 권장)`, projects });
+    }
+    try { db.prepare('DELETE FROM users WHERE id=?').run(uid); res.json({ ok: true }); }
+    catch (e) { res.status(400).json({ error: '참조 중인 데이터가 있어 삭제할 수 없습니다.' }); }
+  });
+  router.use('/users', r);
+})();
+
+// ── 로그인 계정 라우터(/accounts): 비밀번호 처리 ──
+(function accountRouter() {
+  const r = express.Router();
+  const auth = require('./auth');
+  const FIELDS = ['username', 'name', 'division_id', 'role', 'email', 'phone', 'active'];
+  const SELECT_COLS = 'id, username, name, division_id, role, email, phone, active, last_login_at, created_at';
+
+  r.get('/', (req, res) => res.json(db.prepare(`SELECT ${SELECT_COLS} FROM accounts ORDER BY id`).all()));
+  r.get('/:id', (req, res) => {
+    const row = db.prepare(`SELECT ${SELECT_COLS} FROM accounts WHERE id=?`).get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Not found' });
+    res.json(row);
+  });
+  r.post('/', (req, res) => {
+    const values = FIELDS.map(f => req.body[f] ?? null);
     let pwHash = null;
     if (req.body.password) {
       const err = auth.validateComplexity(req.body.password);
       if (err) return res.status(400).json({ error: err });
       pwHash = auth.hashPassword(req.body.password);
     }
-    const result = db.prepare(
-      `INSERT INTO users (${FIELDS.join(',')}, password_hash) VALUES (${placeholders}, ?)`
-    ).run(...values, pwHash);
-    res.json({ id: result.lastInsertRowid });
+    try {
+      const result = db.prepare(`INSERT INTO accounts (${FIELDS.join(',')}, password_hash) VALUES (${FIELDS.map(()=>'?').join(',')}, ?)`).run(...values, pwHash);
+      res.json({ id: result.lastInsertRowid });
+    } catch (e) {
+      if (String(e.message).includes('UNIQUE')) return res.status(400).json({ error: `이미 존재하는 ID입니다: ${req.body.username}` });
+      res.status(400).json({ error: e.message });
+    }
   });
   r.put('/:id', (req, res) => {
     const sets = FIELDS.map(f => `${f}=?`).join(',');
     const values = FIELDS.map(f => req.body[f] ?? null);
-    db.prepare(`UPDATE users SET ${sets} WHERE id=?`).run(...values, req.params.id);
+    try {
+      db.prepare(`UPDATE accounts SET ${sets} WHERE id=?`).run(...values, req.params.id);
+    } catch (e) {
+      if (String(e.message).includes('UNIQUE')) return res.status(400).json({ error: `이미 존재하는 ID입니다: ${req.body.username}` });
+      return res.status(400).json({ error: e.message });
+    }
     if (req.body.password) {
       const err = auth.validateComplexity(req.body.password);
       if (err) return res.status(400).json({ error: err });
-      db.prepare('UPDATE users SET password_hash=? WHERE id=?')
-        .run(auth.hashPassword(req.body.password), req.params.id);
-      // 비밀번호 변경 시 해당 사용자의 모든 세션 종료
+      db.prepare('UPDATE accounts SET password_hash=? WHERE id=?').run(auth.hashPassword(req.body.password), req.params.id);
       try { db.prepare('DELETE FROM sessions WHERE user_id=?').run(req.params.id); } catch {}
     }
     res.json({ ok: true });
   });
   r.delete('/:id', (req, res) => {
-    const uid = req.params.id;
-    // 관련 사업(프로젝트) 확인: 주관자/PM/영업담당으로 참조 중이면 삭제 불가 + 목록 반환
-    const projects = db.prepare(`
-      SELECT p.id, p.project_code, p.project_name, p.status, p.business_year,
-        TRIM(
-          (CASE WHEN p.manager_id=?  THEN '주관 ' ELSE '' END) ||
-          (CASE WHEN p.pm_id=?       THEN 'PM '  ELSE '' END) ||
-          (CASE WHEN p.sales_rep_id=? THEN '영업' ELSE '' END)
-        ) AS roles
-      FROM projects p
-      WHERE p.manager_id=? OR p.pm_id=? OR p.sales_rep_id=?
-      ORDER BY p.business_year DESC, p.project_code
-    `).all(uid, uid, uid, uid, uid, uid);
-    if (projects.length) {
-      return res.status(400).json({
-        error: `관련 사업 ${projects.length}건이 있어 삭제할 수 없습니다. (비활성 처리 권장)`,
-        projects
-      });
-    }
-    try {
-      db.prepare('DELETE FROM users WHERE id=?').run(uid);
-      res.json({ ok: true });
-    } catch (e) {
-      res.status(400).json({ error: '참조 중인 데이터가 있어 삭제할 수 없습니다.' });
-    }
+    const row = db.prepare('SELECT username FROM accounts WHERE id=?').get(req.params.id);
+    if (row && row.username === 'admin') return res.status(400).json({ error: 'admin 계정은 삭제할 수 없습니다.' });
+    db.prepare('DELETE FROM accounts WHERE id=?').run(req.params.id);
+    try { db.prepare('DELETE FROM sessions WHERE user_id=?').run(req.params.id); } catch {}
+    res.json({ ok: true });
   });
-  router.use('/users', r);
+  router.use('/accounts', r);
 })();
+
+// ── 사용자 신청 관리 (관리자) ──
+router.get('/account-requests', (req, res) => {
+  res.json(db.prepare("SELECT id, username, name, email, phone, created_at FROM account_requests WHERE status='pending' ORDER BY created_at").all());
+});
+router.post('/account-requests/:id/approve', (req, res) => {
+  const auth = require('./auth');
+  const reqRow = db.prepare("SELECT * FROM account_requests WHERE id=? AND status='pending'").get(req.params.id);
+  if (!reqRow) return res.status(404).json({ error: '신청을 찾을 수 없습니다.' });
+  if (db.prepare('SELECT 1 FROM accounts WHERE username=?').get(reqRow.username)) {
+    return res.status(400).json({ error: `이미 존재하는 ID입니다: ${reqRow.username}` });
+  }
+  const body = req.body || {};
+  db.prepare(`INSERT INTO accounts (username, name, division_id, role, email, phone, active, password_hash)
+              VALUES (?, ?, ?, ?, ?, ?, 1, ?)`)
+    .run(reqRow.username, reqRow.name, body.division_id ?? null, body.role || 'user',
+         reqRow.email, reqRow.phone, reqRow.password_hash);
+  db.prepare("UPDATE account_requests SET status='approved', processed_at=CURRENT_TIMESTAMP WHERE id=?").run(reqRow.id);
+  res.json({ ok: true });
+});
+router.post('/account-requests/:id/reject', (req, res) => {
+  db.prepare("UPDATE account_requests SET status='rejected', processed_at=CURRENT_TIMESTAMP WHERE id=?").run(req.params.id);
+  res.json({ ok: true });
+});
 
 router.use('/customers', crud('customers', [
   'name', 'contact_person', 'phone', 'email', 'address', 'detail_address',

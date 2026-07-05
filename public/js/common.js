@@ -15,6 +15,7 @@ const NAV = [
   { section: '기준정보', items: [
     { href: 'masters.html?tab=divisions', label: '사업본부' },
     { href: 'masters.html?tab=users',     label: '사용자' },
+    { href: 'masters.html?tab=employees', label: '직원' },
     { href: 'masters.html?tab=customers', label: '고객사' },
     { href: 'masters.html?tab=types',     label: '프로젝트 유형' },
     { href: 'masters.html?tab=solutions', label: '솔루션' }

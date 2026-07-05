@@ -1421,7 +1421,9 @@ function optionCustomers(sel) {
   return `<option value="">선택</option>` + customers.map(c => `<option value="${c.id}" ${c.id==sel?'selected':''}>${c.name}</option>`).join('');
 }
 function optionUsers(sel) {
-  return `<option value="">선택</option>` + users.map(u => `<option value="${u.id}" ${u.id==sel?'selected':''}>${u.name}</option>`).join('');
+  // 담당자(사업담당/PM/영업)는 직원(is_login=0). 현재 지정된 사람은 로그인계정이라도 표시.
+  const staff = users.filter(u => !u.is_login || u.id == sel);
+  return `<option value="">선택</option>` + staff.map(u => `<option value="${u.id}" ${u.id==sel?'selected':''}>${u.name}</option>`).join('');
 }
 function optionTypes(sel) {
   return `<option value="">선택</option>` + types.map(t => `<option value="${t.id}" ${t.id==sel?'selected':''}>(${t.code}) ${t.name}</option>`).join('');

@@ -38,6 +38,7 @@ function buildWhere(q) {
   if (q.sales_rep_id)      add('p.sales_rep_id = ?', q.sales_rep_id);
   if (q.manager_id)        add('p.manager_id = ?', q.manager_id);
   if (q.pm_id)             add('p.pm_id = ?', q.pm_id);
+  if (q.staff_id)          add('(p.manager_id = ? OR p.pm_id = ? OR p.sales_rep_id = ?)', q.staff_id, q.staff_id, q.staff_id);
   if (q.intro_channel)     add('p.intro_channel LIKE ?', `%${q.intro_channel}%`);
   if (q.participation_type)add('p.participation_type = ?', q.participation_type);
   if (q.project_type_id)   add('p.project_type_id = ?', q.project_type_id);

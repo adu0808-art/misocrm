@@ -339,9 +339,38 @@ function init() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    -- 로그인 계정 (직원 users 와 분리) — 프로젝트 FK와 무관
+    CREATE TABLE IF NOT EXISTS accounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      name TEXT,
+      division_id INTEGER,
+      role TEXT DEFAULT 'admin',
+      email TEXT,
+      phone TEXT,
+      active INTEGER DEFAULT 1,
+      password_hash TEXT,
+      last_login_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- 사용자 신청(가입 요청) 대기열 — 관리자 승인 시 accounts 로 등록
+    CREATE TABLE IF NOT EXISTS account_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL,
+      name TEXT,
+      email TEXT,
+      phone TEXT,
+      password_hash TEXT,
+      status TEXT DEFAULT 'pending',   -- pending / approved / rejected
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      processed_at DATETIME
+    );
+
+    -- sessions.user_id 는 accounts.id 를 가리킴 (FK 미설정: 코드에서 관리)
     CREATE TABLE IF NOT EXISTS sessions (
       token TEXT PRIMARY KEY,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       expires_at DATETIME NOT NULL
     );
@@ -405,6 +434,44 @@ function init() {
   addColumnIfMissing('users', 'password_hash',  'TEXT');
   addColumnIfMissing('users', 'last_login_at',  'DATETIME');
 
+  // users: 로그인 계정(사용자) / 직원 구분  — is_login=1 로그인 계정, 0 직원(프로젝트 스태프)
+  addColumnIfMissing('users', 'is_login', 'INTEGER DEFAULT 0');
+  addColumnIfMissing('users', 'position', 'TEXT');   // 직원 직급/직책
+  // admin 만 로그인 계정으로 유지(정책: "사용자는 admin만"). 나머지는 직원.
+  try { db.prepare("UPDATE users SET is_login=1 WHERE username='admin'").run(); } catch {}
+
+  // ── 로그인 계정을 별도 accounts 테이블로 물리 분리 ──
+  // 기존 sessions 가 users FK를 가지면 재생성(FK 제거). 세션은 재로그인으로 복구.
+  try {
+    const sess = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='sessions'").get();
+    if (sess && /REFERENCES\s+users/i.test(sess.sql)) {
+      db.exec('DROP TABLE IF EXISTS sessions');
+      db.exec(`CREATE TABLE sessions (
+        token TEXT PRIMARY KEY, user_id INTEGER NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP, expires_at DATETIME NOT NULL );`);
+      db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_sessions_exp  ON sessions(expires_at);');
+    }
+  } catch (e) { console.error('sessions 재구성 실패:', e.message); }
+
+  // 로그인 계정(is_login=1)을 users → accounts 로 이관 (최초 1회: accounts 가 비었을 때)
+  try {
+    const acctN = db.prepare('SELECT COUNT(*) AS n FROM accounts').get().n;
+    if (acctN === 0) {
+      const logins = db.prepare(
+        "SELECT username, name, division_id, role, email, phone, active, password_hash, last_login_at FROM users WHERE is_login=1"
+      ).all();
+      const ins = db.prepare(`INSERT OR IGNORE INTO accounts
+        (username, name, division_id, role, email, phone, active, password_hash, last_login_at)
+        VALUES (@username,@name,@division_id,@role,@email,@phone,@active,@password_hash,@last_login_at)`);
+      for (const u of logins) ins.run(u);
+      // users 에서 로그인 계정 제거 → users 테이블은 순수 직원. (참조 정리 후 삭제)
+      db.prepare('UPDATE activities SET created_by=NULL WHERE created_by IN (SELECT id FROM users WHERE is_login=1)').run();
+      db.prepare('DELETE FROM users WHERE is_login=1').run();
+      console.log(`[Migrate] 로그인 계정 ${logins.length}개 → accounts 이관, users 는 직원 전용으로 분리`);
+    }
+  } catch (e) { console.error('accounts 이관 실패:', e.message); }
+
   // projects: 즐겨찾기/도메인/연도별 참여금액
   addColumnIfMissing('projects', 'is_favorite', 'INTEGER DEFAULT 0');
   addColumnIfMissing('projects', 'top_domain',  'TEXT');
@@ -439,13 +506,13 @@ init();
       const hash = crypto.scryptSync(pwd, salt, 64).toString('hex');
       return `${salt}:${hash}`;
     };
-    let admin = db.prepare('SELECT id, password_hash FROM users WHERE username = ?').get('admin');
+    let admin = db.prepare('SELECT id, password_hash FROM accounts WHERE username = ?').get('admin');
     if (!admin) {
-      // 완전 빈 DB(시드 비활성 등) → 로그인 가능하도록 admin 신규 생성
-      const r = db.prepare("INSERT INTO users (username, name, role, active, password_hash) VALUES ('admin','관리자','admin',1,?)").run(makeHash());
-      console.log(`[Init] admin 계정 신규 생성 + 비밀번호 설정${process.env.ADMIN_PASSWORD ? ' (env)' : ' (default: Admin@2026)'}`);
+      // 로그인 계정 테이블(accounts)에 admin 없으면 생성
+      db.prepare("INSERT INTO accounts (username, name, role, active, password_hash) VALUES ('admin','관리자','admin',1,?)").run(makeHash());
+      console.log(`[Init] admin 로그인 계정 신규 생성${process.env.ADMIN_PASSWORD ? ' (env)' : ' (default: Admin@2026)'}`);
     } else if (!admin.password_hash) {
-      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(makeHash(), admin.id);
+      db.prepare('UPDATE accounts SET password_hash = ? WHERE id = ?').run(makeHash(), admin.id);
       console.log(`[Init] admin 비밀번호 설정${process.env.ADMIN_PASSWORD ? ' (env)' : ' (default: Admin@2026)'}`);
     }
     // 비밀번호가 이미 있으면 아무 것도 하지 않음 (데이터 보존)

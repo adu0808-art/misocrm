@@ -12,17 +12,29 @@
     <div class="content">
       <div class="card">
         <div class="card-header">
-          <h2>활동 이력 (전체)</h2>
+          <h2>활동 이력 <small class="text-muted" style="font-weight:400;font-size:12px;" id="cntLabel"></small></h2>
         </div>
         <div class="card-body">
-          <div class="filter-bar">
-            <select id="f_cat"><option value="">전체 분야</option><option>영업방문</option><option>전화상담</option><option>이슈등록</option><option>리스트등록</option></select>
-            <input type="text" id="f_kw" placeholder="제목/내용 검색">
-            <button class="btn" id="searchBtn">조회</button>
+          <div class="filter-bar" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+            <label class="text-muted" style="font-size:12px;">사업연도</label>
+            <select id="f_year" style="width:auto;"></select>
+            <label class="text-muted" style="font-size:12px;">사업본부</label>
+            <select id="f_div" style="width:auto;"><option value="">전체 본부</option></select>
+            <input type="text" id="f_kw" placeholder="내용 검색" style="flex:1;min-width:180px;">
+            <button class="btn btn-primary" id="searchBtn">조회</button>
             <button class="btn btn-outline" id="resetBtn">초기화</button>
           </div>
-          <div class="table-wrap"><table class="data">
-            <thead><tr><th>일자</th><th>분야</th><th>프로젝트</th><th class="num">활동 후 수주확률(%)</th><th>제목</th><th>내용</th><th>작성자</th></tr></thead>
+          <div class="table-wrap"><table class="data" style="table-layout:fixed;width:100%;">
+            <colgroup>
+              <col style="width:96px;">
+              <col style="width:150px;">
+              <col style="width:240px;">
+              <col style="width:200px;">
+              <col>
+            </colgroup>
+            <thead><tr>
+              <th>일자</th><th>고객명</th><th>프로젝트명</th><th>제목</th><th>내용</th>
+            </tr></thead>
             <tbody id="actTbody"></tbody>
           </table></div>
         </div>
@@ -33,34 +45,52 @@
 <script src="js/common.js"></script>
 <script>
 renderLayout('활동 이력');
+const CUR = new Date().getFullYear();
+
+function esc(s){ return (s==null?'':String(s)).replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])); }
+
+async function init() {
+  // 사업연도 옵션
+  const ys = document.getElementById('f_year');
+  ys.innerHTML = '<option value="">전체</option>';
+  for (let y = CUR + 1; y >= CUR - 4; y--) ys.innerHTML += `<option value="${y}" ${y===CUR?'selected':''}>${y}년</option>`;
+  // 사업본부 옵션
+  try {
+    const divs = await api.get('/api/masters/divisions');
+    const dv = document.getElementById('f_div');
+    divs.forEach(d => dv.innerHTML += `<option value="${d.id}">${esc(d.name)}</option>`);
+  } catch {}
+  document.getElementById('searchBtn').onclick = load;
+  document.getElementById('resetBtn').onclick = () => { ys.value=String(CUR); document.getElementById('f_div').value=''; document.getElementById('f_kw').value=''; load(); };
+  document.getElementById('f_kw').addEventListener('keydown', e => { if (e.key==='Enter') load(); });
+  document.getElementById('f_year').onchange = load;
+  document.getElementById('f_div').onchange = load;
+  load();
+}
+
 async function load() {
   const params = new URLSearchParams();
-  const cat = document.getElementById('f_cat').value;
-  const kw = document.getElementById('f_kw').value;
-  if (cat) params.set('category', cat);
+  const y = document.getElementById('f_year').value;
+  const dv = document.getElementById('f_div').value;
+  const kw = document.getElementById('f_kw').value.trim();
+  if (y) params.set('year', y);
+  if (dv) params.set('division_id', dv);
   if (kw) params.set('keyword', kw);
   const rows = await api.get('/api/activities?' + params);
+  document.getElementById('cntLabel').textContent = `${rows.length}건`;
   document.getElementById('actTbody').innerHTML = rows.map(r => `
     <tr>
-      <td>${r.activity_date||''}</td>
-      <td><span class="badge badge-기획단계">${r.category||''}</span></td>
-      <td><span class="proj-link" data-pid="${r.project_id}" style="color:#2563eb;cursor:pointer;text-decoration:underline;">${r.project_name||''}</span></td>
-      <td class="num">${r.post_win_rate||0}</td>
-      <td>${r.title||''}</td>
-      <td style="white-space:pre-wrap;max-width:400px;">${(r.content||'').replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))}</td>
-      <td>${r.creator_name||''}</td>
-    </tr>`).join('') || `<tr><td colspan="7" class="empty">활동이 없습니다.</td></tr>`;
+      <td style="font-variant-numeric:tabular-nums;">${(r.activity_date||'').slice(0,10)}</td>
+      <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(r.customer_name)}">${esc(r.customer_name)}</td>
+      <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><span class="proj-link" data-pid="${r.project_id}" style="color:#2563eb;cursor:pointer;text-decoration:underline;" title="${esc(r.project_name)}">${esc(r.project_name)}</span></td>
+      <td style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(r.title)}">${esc(r.title)}</td>
+      <td style="white-space:pre-wrap;word-break:break-word;">${esc(r.content)}</td>
+    </tr>`).join('') || `<tr><td colspan="5" class="empty">활동이 없습니다.</td></tr>`;
   document.querySelectorAll('.proj-link').forEach(el => {
-    el.onclick = () => {
-      const pid = el.dataset.pid;
-      if (pid) openDetailPopup(pid, () => load());
-    };
+    el.onclick = () => { const pid = el.dataset.pid; if (pid) openDetailPopup(pid, () => load()); };
   });
 }
-document.getElementById('searchBtn').onclick = load;
-document.getElementById('resetBtn').onclick = () => { document.getElementById('f_cat').value=''; document.getElementById('f_kw').value=''; load(); };
-document.getElementById('f_kw').addEventListener('keydown', e => { if (e.key==='Enter') load(); });
-load();
+init();
 </script>
 </body>
 </html>

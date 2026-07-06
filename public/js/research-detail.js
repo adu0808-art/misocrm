@@ -130,61 +130,127 @@ async function saveBasic() {
 // ===== 참여연구원 =====
 async function loadMembers() {
   const rows = await api.get('/api/research-members?project_id=' + RID);
+  const monthTh = Array.from({ length: 12 }, (_, i) => `<th style="width:48px;">${i + 1}월</th>`).join('');
   document.getElementById('tab-members').innerHTML = `
     <div class="card">
-      <div class="card-header"><h3>참여연구원 <small class="text-muted" style="font-size:12px;">${rows.length}명</small></h3><button class="btn btn-primary btn-sm" id="addM">+ 추가</button></div>
+      <div class="card-header">
+        <h3>참여연구원 <small class="text-muted" style="font-size:12px;">${rows.length}명 · 월별 참여율(%)</small></h3>
+        <div class="flex gap-8" style="align-items:center;">
+          <div id="mPick" style="min-width:240px;"></div>
+          <button class="btn btn-primary btn-sm" id="addM">+ 추가</button>
+        </div>
+      </div>
       <div class="card-body"><div class="table-wrap"><table class="inline-edit">
-        <thead><tr><th style="width:120px;">역할</th><th>성명</th><th>소속</th><th style="width:90px;">직급</th>
-          <th style="width:80px;">참여율%</th><th style="width:130px;">참여시작</th><th style="width:130px;">참여종료</th>
-          <th style="width:140px;">연 인건비</th><th style="width:140px;">배분 인건비</th><th class="act-cell"></th></tr></thead>
+        <thead><tr><th style="width:110px;">역할</th><th style="width:96px;">성명</th><th style="width:120px;">소속</th><th style="width:70px;">직급</th>
+          ${monthTh}
+          <th style="width:130px;">연 인건비</th><th style="width:130px;">배분 인건비</th><th class="act-cell"></th></tr></thead>
         <tbody id="mBody"></tbody>
-      </table></div></div>
+      </table></div>
+      <div class="text-muted" style="font-size:12px;margin-top:8px;">※ 성명을 클릭하면 해당 직원의 월별 잔여 참여율(같은 사업연도 모든 과제 합산)을 확인할 수 있습니다. · 배분 인건비 = 연 인건비 × (12개월 평균 참여율).</div>
+      </div>
     </div>`;
   renderMemberRows(rows);
+  // 직원 선택 콤보
+  const opts = employees.filter(e => !e.is_login && e.active)
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'))
+    .map(e => ({ value: String(e.id), label: `${e.name}${e.hq ? ' · ' + e.hq : ''}${e.position ? ' ' + e.position : ''}` }));
+  let pickedId = '';
+  new SearchableSelect(document.getElementById('mPick'), { options: opts, placeholder: '직원 검색하여 선택...', onChange: v => { pickedId = v; } });
   document.getElementById('addM').onclick = async () => {
-    await api.post('/api/research-members', { project_id: Number(RID), role: '연구원', participation_rate: 100 });
+    if (!pickedId) { toast('추가할 직원을 선택하세요.', 'error'); return; }
+    const emp = employees.find(e => String(e.id) === String(pickedId));
+    if (!emp) { toast('직원 정보를 찾을 수 없습니다.', 'error'); return; }
+    if (rows.some(r => (emp.employee_number && r.employee_number === emp.employee_number) || r.name === emp.name)) {
+      toast('이미 추가된 직원입니다.', 'error'); return;
+    }
+    await api.post('/api/research-members', {
+      project_id: Number(RID), role: '연구원', name: emp.name,
+      org: emp.hq || null, position: emp.position || null, employee_number: emp.employee_number || null
+    });
     loadMembers();
   };
 }
 function renderMemberRows(rows) {
   const body = document.getElementById('mBody');
+  const monthCells = (r) => Array.from({ length: 12 }, (_, i) => {
+    const v = r['m' + (i + 1)];
+    return `<td style="padding:2px;"><input type="number" class="m-mo" data-mo="${i + 1}" value="${v ?? ''}" min="0" max="100" step="0.1" style="width:44px;text-align:right;padding:4px 3px;"></td>`;
+  }).join('');
   body.innerHTML = rows.map(r => `
-    <tr data-id="${r.id}">
+    <tr data-id="${r.id}" data-empno="${esca(r.employee_number)}" data-name="${esca(r.name)}">
       <td><select class="m-role">${MEMBER_ROLES.map(x => `<option ${r.role === x ? 'selected' : ''}>${x}</option>`).join('')}</select></td>
-      <td><input class="m-name" value="${esca(r.name)}" placeholder="성명"></td>
-      <td><input class="m-org" value="${esca(r.org)}" placeholder="소속기관"></td>
-      <td><input class="m-pos" value="${esca(r.position)}" placeholder="직급"></td>
-      <td><input type="number" class="m-pr" value="${r.participation_rate ?? 100}" min="0" max="100" style="text-align:right;"></td>
-      <td><input type="date" class="m-sd" value="${r.start_date || ''}"></td>
-      <td><input type="date" class="m-ed" value="${r.end_date || ''}"></td>
+      <td><a class="m-name-link" style="color:#2563eb;cursor:pointer;text-decoration:underline;font-weight:600;white-space:nowrap;" title="월별 잔여 참여율 보기">${esc(r.name || '(미지정)')}</a></td>
+      <td><input class="m-org" value="${esca(r.org)}" placeholder="소속" style="width:112px;"></td>
+      <td><input class="m-pos" value="${esca(r.position)}" placeholder="직급" style="width:64px;"></td>
+      ${monthCells(r)}
       <td>${currencyHtml('m-ac-' + r.id, r.annual_cost, { cls: 'm-ac' })}</td>
       <td><span class="m-lc ie-readonly" style="display:inline-block;padding:5px 7px;text-align:right;width:100%;font-variant-numeric:tabular-nums;">${fmtWon(r.labor_cost || 0)}</span></td>
       <td class="act-cell ie-row-actions">
         <button class="ie-icon-btn" data-save="${r.id}" title="저장" style="color:var(--primary);">💾</button>
         <button class="ie-icon-btn danger" data-del="${r.id}" title="삭제">🗑</button>
       </td>
-    </tr>`).join('') || `<tr><td colspan="10" class="empty">참여연구원을 추가해주세요.</td></tr>`;
+    </tr>`).join('') || `<tr><td colspan="19" class="empty">상단에서 직원을 선택해 참여연구원을 추가해주세요.</td></tr>`;
   bindCurrencyInputs(body);
   body.querySelectorAll('tr[data-id]').forEach(tr => {
+    const months = () => [...tr.querySelectorAll('.m-mo')].map(el => el.value === '' ? null : Number(el.value));
+    const avg12 = () => months().reduce((s, v) => s + (v || 0), 0) / 12;
     const recalc = () => {
       const ac = currencyValue(tr.querySelector('.m-ac'));
-      const pr = Number(tr.querySelector('.m-pr').value || 0);
-      tr.querySelector('.m-lc').textContent = fmtWon(Math.round(ac * pr / 100));
+      tr.querySelector('.m-lc').textContent = fmtWon(Math.round(ac * avg12() / 100));
     };
     tr.querySelectorAll('input,select').forEach(el => { el.addEventListener('input', recalc); el.addEventListener('change', recalc); });
+    tr.querySelector('.m-name-link').onclick = () => showAllocation(tr.dataset.name, tr.dataset.empno || '', tr.dataset.id);
     tr.querySelector('[data-save]').onclick = async () => {
       const ac = currencyValue(tr.querySelector('.m-ac'));
-      const pr = Number(tr.querySelector('.m-pr').value || 0);
-      await api.put('/api/research-members/' + tr.dataset.id, {
-        project_id: Number(RID), role: tr.querySelector('.m-role').value, name: tr.querySelector('.m-name').value.trim(),
+      const mo = months();
+      const b = {
+        project_id: Number(RID), role: tr.querySelector('.m-role').value, name: tr.dataset.name,
+        employee_number: tr.dataset.empno || null,
         org: tr.querySelector('.m-org').value.trim(), position: tr.querySelector('.m-pos').value.trim(),
-        participation_rate: pr, start_date: tr.querySelector('.m-sd').value || null, end_date: tr.querySelector('.m-ed').value || null,
-        annual_cost: ac, labor_cost: Math.round(ac * pr / 100)
-      });
+        participation_rate: Math.round(avg12() * 10) / 10, annual_cost: ac, labor_cost: Math.round(ac * avg12() / 100)
+      };
+      mo.forEach((v, i) => { b['m' + (i + 1)] = v; });
+      await api.put('/api/research-members/' + tr.dataset.id, b);
       toast('저장되었습니다.', 'success');
     };
     tr.querySelector('[data-del]').onclick = async () => { if (!confirm('삭제하시겠습니까?')) return; await api.del('/api/research-members/' + tr.dataset.id); loadMembers(); };
   });
+}
+
+// 직원 월별 잔여 참여율 팝업 (같은 사업연도 모든 과제 합산)
+async function showAllocation(name, empno, memberId) {
+  const year = (research && research.business_year) || new Date().getFullYear();
+  const q = empno ? ('employee_number=' + encodeURIComponent(empno)) : ('name=' + encodeURIComponent(name || ''));
+  let data;
+  try { data = await api.get('/api/research-members/allocation?' + q + '&year=' + year); }
+  catch (e) { toast('조회 실패: ' + e.message, 'error'); return; }
+  const months = data.months || [];
+  const monthTh = months.map(m => `<th style="text-align:center;">${m.month}월</th>`).join('');
+  const allocTd = months.map(m => `<td style="text-align:right;">${m.allocated ? m.allocated + '%' : '-'}</td>`).join('');
+  const remainTd = months.map(m => {
+    const c = m.remaining < 0 ? '#dc2626' : (m.remaining < 100 ? '#2563eb' : '#16a34a');
+    return `<td style="text-align:right;font-weight:700;color:${c};">${m.remaining}%</td>`;
+  }).join('');
+  const projRows = (data.projects || []).map(p =>
+    `<tr><td style="white-space:nowrap;">[${esc(p.project_code)}] ${esc(p.project_name)}</td>${p.m.map(v => `<td style="text-align:right;">${v ? v + '%' : '-'}</td>`).join('')}</tr>`
+  ).join('') || `<tr><td colspan="13" class="empty">배정된 과제가 없습니다.</td></tr>`;
+  const back = openModal(`${esc(name)} · ${year}년 월별 참여율 현황`, `
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th style="width:90px;">구분</th>${monthTh}</tr></thead>
+      <tbody>
+        <tr><td style="font-weight:600;">배정 합계</td>${allocTd}</tr>
+        <tr><td style="font-weight:600;">잔여</td>${remainTd}</tr>
+      </tbody>
+    </table></div>
+    <div style="margin-top:14px;margin-bottom:6px;font-size:13px;font-weight:600;color:#475569;">과제별 배정 (${(data.projects || []).length}건)</div>
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th style="min-width:220px;">과제</th>${months.map(m => `<th style="text-align:center;">${m.month}</th>`).join('')}</tr></thead>
+      <tbody>${projRows}</tbody>
+    </table></div>
+    <div class="text-muted" style="font-size:12px;margin-top:8px;">※ 잔여 = 100% − (같은 사업연도 전체 과제 배정 합계). 빨강은 100% 초과(과배정)입니다.</div>
+  `, () => true, { saveText: '확인' });
+  const modalEl = back.querySelector('.modal');
+  if (modalEl) { modalEl.style.maxWidth = '920px'; modalEl.style.width = '94vw'; }
 }
 
 // ===== 연구비 집행 =====

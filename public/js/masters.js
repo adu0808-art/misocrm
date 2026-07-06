@@ -352,14 +352,15 @@ async function loadEmployees() {
   const kw = _empKeyword.trim().toLowerCase();
   if (kw) list = list.filter(u =>
     (u.name || '').toLowerCase().includes(kw) ||
-    (u.username || '').toLowerCase().includes(kw) ||
-    (divMap[u.division_id] || '').toLowerCase().includes(kw));
+    (u.employee_number || '').toLowerCase().includes(kw) ||
+    (u.hq || divMap[u.division_id] || '').toLowerCase().includes(kw) ||
+    (u.team || '').toLowerCase().includes(kw));
 
   body.innerHTML = `
     <div class="flex-between mb-16">
       <div class="text-muted">직원 ${list.length}명${showInactiveEmp ? '' : ` <span style="font-size:12px;">(활성만 · 비활성 ${inactiveCnt}명 숨김)</span>`}</div>
       <div class="flex gap-8" style="align-items:center;">
-        <input id="empSearch" placeholder="이름 / ID / 소속 검색" value="${esc(_empKeyword)}" style="width:220px;">
+        <input id="empSearch" placeholder="이름 / 사원번호 / 본부 / 팀 검색" value="${esc(_empKeyword)}" style="width:240px;">
         <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;">
           <input type="checkbox" id="chkInactiveEmp" style="width:auto;" ${showInactiveEmp ? 'checked' : ''}> 비활성 포함
         </label>
@@ -367,21 +368,22 @@ async function loadEmployees() {
       </div>
     </div>
     <div class="table-wrap"><table class="data">
-      <thead><tr><th>ID</th><th>이름</th><th>소속</th><th>직급</th><th>이메일</th><th>전화</th><th>상태</th><th></th></tr></thead>
+      <thead><tr><th>사원번호</th><th>이름</th><th>소속본부</th><th>팀</th><th>직급</th><th>입사일</th><th>퇴사일</th><th>상태</th><th></th></tr></thead>
       <tbody>${list.map(u => `
         <tr${u.active ? '' : ' style="opacity:.55;"'}>
-          <td>${esc(u.username)}</td>
+          <td style="font-variant-numeric:tabular-nums;">${esc(u.employee_number || '')}</td>
           <td><span class="emp-name-link" data-eid="${u.id}" title="관련 사업 보기" style="cursor:pointer;color:#2563eb;text-decoration:underline;font-weight:600;">${esc(u.name)}</span></td>
-          <td>${esc(divMap[u.division_id] || '')}</td>
+          <td>${esc(u.hq || divMap[u.division_id] || '')}</td>
+          <td>${esc(u.team || '')}</td>
           <td>${esc(u.position || '')}</td>
-          <td>${esc(u.email || '')}</td>
-          <td>${esc(u.phone || '')}</td>
+          <td style="font-size:12px;">${esc(u.hire_date || '')}</td>
+          <td style="font-size:12px;">${esc(u.leave_date || '')}</td>
           <td>${u.active ? '<span class="badge badge-수주완료">활성</span>' : '<span class="badge badge-수주실패">비활성</span>'}</td>
           <td class="actions">
             <button class="btn btn-sm" data-edit="${u.id}">수정</button>
             <button class="btn btn-sm btn-danger" data-del="${u.id}">삭제</button>
           </td>
-        </tr>`).join('') || `<tr><td colspan="8" class="empty">표시할 직원이 없습니다.</td></tr>`}
+        </tr>`).join('') || `<tr><td colspan="9" class="empty">표시할 직원이 없습니다.</td></tr>`}
       </tbody></table></div>`;
 
   const search = body.querySelector('#empSearch');
@@ -401,17 +403,63 @@ async function loadEmployees() {
 
 async function editEmployee(id, divs) {
   const item = id ? await api.get('/api/masters/users/' + id)
-                  : { username:'', name:'', division_id:'', position:'', email:'', phone:'', active:1 };
+                  : { username:'', name:'', division_id:'', position:'', email:'', phone:'', active:1, employee_number:'', hq:'', team:'', hire_date:'', leave_date:'',
+                      birth_date:'', sci_tech_no:'', address:'', annual_salary:'', monthly_pay:'', base_pay:'', meal_allowance:'', overtime_allowance:'', childcare_allowance:'',
+                      ins_pension:'', ins_health:'', ins_employment:'', ins_accident:'', severance_monthly:'', severance_annual:'', severance_on_leave:'',
+                      career_period:'', career_start:'', edu_final:'', grad_school:'', grad_major:'', grad_year:'', university:'', univ_major:'', univ_year:'',
+                      cert1:'', cert1_date:'', cert2:'', cert2_date:'', cert3:'', cert3_date:'', cert4:'', cert4_date:'' };
+  const won = v => (v === null || v === undefined || v === '') ? '' : v;
   openModal(id ? '직원 수정' : '직원 추가', `
     <div class="grid-form">
-      <div class="form-row"><label class="required">ID</label><input id="e_username" value="${esc(item.username)}" placeholder="중복 불가"></div>
+      <div class="form-row"><label class="required">사원번호</label><input id="e_empno" value="${esc(item.employee_number)}" placeholder="예: 060001"></div>
       <div class="form-row"><label class="required">이름</label><input id="e_name" value="${esc(item.name)}"></div>
-      <div class="form-row"><label>소속본부</label><select id="e_div"><option value="">선택</option>${divs.map(d=>`<option value="${d.id}" ${d.id==item.division_id?'selected':''}>${d.name}</option>`).join('')}</select></div>
+      <div class="form-row"><label class="required">ID(로그인/식별)</label><input id="e_username" value="${esc(item.username)}" placeholder="중복 불가"></div>
+      <div class="form-row"><label>소속본부</label><input id="e_hq" value="${esc(item.hq)}" placeholder="예: 기술융합본부"></div>
+      <div class="form-row"><label>팀</label><input id="e_team" value="${esc(item.team)}" placeholder="예: 디자인개발팀"></div>
+      <div class="form-row"><label>집계본부</label><select id="e_div"><option value="">선택 안함</option>${divs.map(d=>`<option value="${d.id}" ${d.id==item.division_id?'selected':''}>${d.name}</option>`).join('')}</select></div>
       <div class="form-row"><label>직급</label><input id="e_pos" value="${esc(item.position)}" placeholder="예: 부장"></div>
       <div class="form-row"><label>이메일</label><input id="e_email" value="${esc(item.email)}"></div>
       <div class="form-row"><label>전화</label><input id="e_phone" value="${esc(item.phone)}"></div>
+      <div class="form-row"><label>입사일</label><input id="e_hire" type="date" value="${esc(item.hire_date)}"></div>
+      <div class="form-row"><label>퇴사일</label><input id="e_leave" value="${esc(item.leave_date)}" placeholder="YYYY-MM-DD 또는 육아휴직 등"></div>
       <div class="form-row"><label>활성</label><select id="e_active"><option value="1" ${item.active?'selected':''}>활성</option><option value="0" ${!item.active?'selected':''}>비활성</option></select></div>
+      <div class="form-row"><label>생년월일</label><input id="e_birth" value="${esc(item.birth_date)}" placeholder="YYYY-MM-DD"></div>
+      <div class="form-row"><label>과학기술인번호</label><input id="e_scitech" value="${esc(item.sci_tech_no)}"></div>
+      <div class="form-row" style="grid-column:1/-1;"><label>주소</label><input id="e_addr" value="${esc(item.address)}"></div>
+      <div style="grid-column:1/-1;margin:8px 0 2px;font-weight:600;color:#475569;border-top:1px solid #e2e8f0;padding-top:10px;">급여 · 4대보험(회사부담) · 퇴직금</div>
+      <div class="form-row"><label>연봉 계</label><input id="e_annual" class="currency" value="${won(item.annual_salary)}"></div>
+      <div class="form-row"><label>월급여</label><input id="e_monthly" class="currency" value="${won(item.monthly_pay)}"></div>
+      <div class="form-row"><label>기본급</label><input id="e_base" class="currency" value="${won(item.base_pay)}"></div>
+      <div class="form-row"><label>식대</label><input id="e_meal" class="currency" value="${won(item.meal_allowance)}"></div>
+      <div class="form-row"><label>연장수당</label><input id="e_ot" class="currency" value="${won(item.overtime_allowance)}"></div>
+      <div class="form-row"><label>보육수당</label><input id="e_child" class="currency" value="${won(item.childcare_allowance)}"></div>
+      <div class="form-row"><label>국민연금</label><input id="e_nat" class="currency" value="${won(item.ins_pension)}"></div>
+      <div class="form-row"><label>건강보험</label><input id="e_hea" class="currency" value="${won(item.ins_health)}"></div>
+      <div class="form-row"><label>고용보험</label><input id="e_emp" class="currency" value="${won(item.ins_employment)}"></div>
+      <div class="form-row"><label>산재보험</label><input id="e_acc" class="currency" value="${won(item.ins_accident)}"></div>
+      <div class="form-row"><label>퇴직금(월)</label><input id="e_sevm" class="currency" value="${won(item.severance_monthly)}"></div>
+      <div class="form-row"><label>퇴직금(연)</label><input id="e_sevy" class="currency" value="${won(item.severance_annual)}"></div>
+      <div class="form-row"><label>퇴사월 퇴직급여</label><input id="e_sevl" class="currency" value="${won(item.severance_on_leave)}"></div>
+      <div style="grid-column:1/-1;margin:8px 0 2px;font-weight:600;color:#475569;border-top:1px solid #e2e8f0;padding-top:10px;">경력 · 학력 · 자격증</div>
+      <div class="form-row"><label>경력기간</label><input id="e_cperiod" value="${esc(item.career_period)}" placeholder="예: 10년2개월"></div>
+      <div class="form-row"><label>경력시작월</label><input id="e_cstart" value="${esc(item.career_start)}" placeholder="YYYY-MM-DD"></div>
+      <div class="form-row"><label>최종학력</label><input id="e_edufinal" value="${esc(item.edu_final)}" placeholder="예: 학사"></div>
+      <div class="form-row"><label>대학원</label><input id="e_gschool" value="${esc(item.grad_school)}"></div>
+      <div class="form-row"><label>대학원 전공</label><input id="e_gmajor" value="${esc(item.grad_major)}"></div>
+      <div class="form-row"><label>대학원 졸업년월</label><input id="e_gyear" value="${esc(item.grad_year)}" placeholder="YYYY-MM-DD"></div>
+      <div class="form-row"><label>대학교</label><input id="e_univ" value="${esc(item.university)}"></div>
+      <div class="form-row"><label>대학교 전공</label><input id="e_umajor" value="${esc(item.univ_major)}"></div>
+      <div class="form-row"><label>대학교 졸업년월</label><input id="e_uyear" value="${esc(item.univ_year)}" placeholder="YYYY-MM-DD"></div>
+      <div class="form-row"><label>자격증1</label><input id="e_cert1" value="${esc(item.cert1)}"></div>
+      <div class="form-row"><label>취득일1</label><input id="e_cert1d" value="${esc(item.cert1_date)}" placeholder="YYYY-MM-DD"></div>
+      <div class="form-row"><label>자격증2</label><input id="e_cert2" value="${esc(item.cert2)}"></div>
+      <div class="form-row"><label>취득일2</label><input id="e_cert2d" value="${esc(item.cert2_date)}" placeholder="YYYY-MM-DD"></div>
+      <div class="form-row"><label>자격증3</label><input id="e_cert3" value="${esc(item.cert3)}"></div>
+      <div class="form-row"><label>취득일3</label><input id="e_cert3d" value="${esc(item.cert3_date)}" placeholder="YYYY-MM-DD"></div>
+      <div class="form-row"><label>자격증4</label><input id="e_cert4" value="${esc(item.cert4)}"></div>
+      <div class="form-row"><label>취득일4</label><input id="e_cert4d" value="${esc(item.cert4_date)}" placeholder="YYYY-MM-DD"></div>
     </div>`, async (m) => {
+    const num = sel => { const v = (m.querySelector(sel).value || '').replace(/[^\d-]/g, ''); return v === '' ? null : Number(v); };
     const bodyData = {
       username: m.querySelector('#e_username').value.trim(),
       name: m.querySelector('#e_name').value.trim(),
@@ -420,6 +468,31 @@ async function editEmployee(id, divs) {
       email: m.querySelector('#e_email').value.trim(),
       phone: m.querySelector('#e_phone').value.trim(),
       active: Number(m.querySelector('#e_active').value),
+      employee_number: m.querySelector('#e_empno').value.trim() || null,
+      hq: m.querySelector('#e_hq').value.trim() || null,
+      team: m.querySelector('#e_team').value.trim() || null,
+      hire_date: m.querySelector('#e_hire').value.trim() || null,
+      leave_date: m.querySelector('#e_leave').value.trim() || null,
+      birth_date: m.querySelector('#e_birth').value.trim() || null,
+      sci_tech_no: m.querySelector('#e_scitech').value.trim() || null,
+      address: m.querySelector('#e_addr').value.trim() || null,
+      annual_salary: num('#e_annual'), monthly_pay: num('#e_monthly'), base_pay: num('#e_base'),
+      meal_allowance: num('#e_meal'), overtime_allowance: num('#e_ot'), childcare_allowance: num('#e_child'),
+      ins_pension: num('#e_nat'), ins_health: num('#e_hea'), ins_employment: num('#e_emp'), ins_accident: num('#e_acc'),
+      severance_monthly: num('#e_sevm'), severance_annual: num('#e_sevy'), severance_on_leave: num('#e_sevl'),
+      career_period: m.querySelector('#e_cperiod').value.trim() || null,
+      career_start: m.querySelector('#e_cstart').value.trim() || null,
+      edu_final: m.querySelector('#e_edufinal').value.trim() || null,
+      grad_school: m.querySelector('#e_gschool').value.trim() || null,
+      grad_major: m.querySelector('#e_gmajor').value.trim() || null,
+      grad_year: m.querySelector('#e_gyear').value.trim() || null,
+      university: m.querySelector('#e_univ').value.trim() || null,
+      univ_major: m.querySelector('#e_umajor').value.trim() || null,
+      univ_year: m.querySelector('#e_uyear').value.trim() || null,
+      cert1: m.querySelector('#e_cert1').value.trim() || null, cert1_date: m.querySelector('#e_cert1d').value.trim() || null,
+      cert2: m.querySelector('#e_cert2').value.trim() || null, cert2_date: m.querySelector('#e_cert2d').value.trim() || null,
+      cert3: m.querySelector('#e_cert3').value.trim() || null, cert3_date: m.querySelector('#e_cert3d').value.trim() || null,
+      cert4: m.querySelector('#e_cert4').value.trim() || null, cert4_date: m.querySelector('#e_cert4d').value.trim() || null,
       role: 'user',
       is_login: 0
     };

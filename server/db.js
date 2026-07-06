@@ -471,6 +471,52 @@ function init() {
   // users: 로그인 계정(사용자) / 직원 구분  — is_login=1 로그인 계정, 0 직원(프로젝트 스태프)
   addColumnIfMissing('users', 'is_login', 'INTEGER DEFAULT 0');
   addColumnIfMissing('users', 'position', 'TEXT');   // 직원 직급/직책
+
+  // users: 인사 마스터 필드 (사원번호=업무 키, 소속본부/팀 원본, 입/퇴사일)
+  addColumnIfMissing('users', 'employee_number', 'TEXT'); // 사원번호(키)
+  addColumnIfMissing('users', 'hq',              'TEXT');  // 소속본부(HR 원본 명칭)
+  addColumnIfMissing('users', 'team',            'TEXT');  // 소속팀
+  addColumnIfMissing('users', 'hire_date',       'TEXT');  // 입사일
+  addColumnIfMissing('users', 'leave_date',      'TEXT');  // 퇴사일
+  // 사원번호를 업무 키로 강제(값이 있는 행끼리 유일). 플레이스홀더/과거인력은 NULL 허용.
+  try { db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_empno ON users(employee_number) WHERE employee_number IS NOT NULL'); } catch (e) { console.warn('[users] employee_number 유니크 인덱스 생성 경고:', e.message); }
+
+  // users: 인적사항 + 급여/보험/퇴직금 (인사현황 엑셀)
+  addColumnIfMissing('users', 'birth_date',          'TEXT');    // 생년월일
+  addColumnIfMissing('users', 'sci_tech_no',         'TEXT');    // 과학기술인번호
+  addColumnIfMissing('users', 'address',             'TEXT');    // 주소
+  addColumnIfMissing('users', 'annual_salary',       'INTEGER'); // 연봉 계
+  addColumnIfMissing('users', 'monthly_pay',         'INTEGER'); // 월급여
+  addColumnIfMissing('users', 'base_pay',            'INTEGER'); // 기본급
+  addColumnIfMissing('users', 'meal_allowance',      'INTEGER'); // 식대
+  addColumnIfMissing('users', 'overtime_allowance',  'INTEGER'); // 연장수당
+  addColumnIfMissing('users', 'childcare_allowance', 'INTEGER'); // 보육수당
+  addColumnIfMissing('users', 'ins_pension',         'INTEGER'); // 국민연금(회사부담)
+  addColumnIfMissing('users', 'ins_health',          'INTEGER'); // 건강보험(회사부담)
+  addColumnIfMissing('users', 'ins_employment',      'INTEGER'); // 고용보험(회사부담)
+  addColumnIfMissing('users', 'ins_accident',        'INTEGER'); // 산재보험(회사부담)
+  addColumnIfMissing('users', 'severance_monthly',   'INTEGER'); // 퇴직금(월)
+  addColumnIfMissing('users', 'severance_annual',    'INTEGER'); // 퇴직금(연)
+  addColumnIfMissing('users', 'severance_on_leave',  'INTEGER'); // 퇴사월 퇴직급여
+
+  // users: 경력 · 학력 · 자격증 (인사현황 엑셀 — 퇴사자/공통 시트 기준)
+  addColumnIfMissing('users', 'career_period', 'TEXT'); // 경력기간
+  addColumnIfMissing('users', 'career_start',  'TEXT'); // 경력시작월
+  addColumnIfMissing('users', 'edu_final',     'TEXT'); // 최종학력
+  addColumnIfMissing('users', 'grad_school',   'TEXT'); // 대학원
+  addColumnIfMissing('users', 'grad_major',    'TEXT'); // 대학원 전공
+  addColumnIfMissing('users', 'grad_year',     'TEXT'); // 대학원 졸업년월
+  addColumnIfMissing('users', 'university',    'TEXT'); // 대학교
+  addColumnIfMissing('users', 'univ_major',    'TEXT'); // 대학교 전공
+  addColumnIfMissing('users', 'univ_year',     'TEXT'); // 대학교 졸업년월
+  addColumnIfMissing('users', 'cert1',         'TEXT'); addColumnIfMissing('users', 'cert1_date', 'TEXT');
+  addColumnIfMissing('users', 'cert2',         'TEXT'); addColumnIfMissing('users', 'cert2_date', 'TEXT');
+  addColumnIfMissing('users', 'cert3',         'TEXT'); addColumnIfMissing('users', 'cert3_date', 'TEXT');
+  addColumnIfMissing('users', 'cert4',         'TEXT'); addColumnIfMissing('users', 'cert4_date', 'TEXT');
+
+  // research_members: 월별 참여율(%) m1~m12 + 직원 연결(사원번호)
+  for (let mo = 1; mo <= 12; mo++) addColumnIfMissing('research_members', 'm' + mo, 'REAL');
+  addColumnIfMissing('research_members', 'employee_number', 'TEXT'); // 선택한 직원의 사원번호
   // admin 만 로그인 계정으로 유지(정책: "사용자는 admin만"). 나머지는 직원.
   try { db.prepare("UPDATE users SET is_login=1 WHERE username='admin'").run(); } catch {}
 

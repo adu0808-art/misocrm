@@ -331,4 +331,42 @@ router.get('/upcoming', (req, res) => {
   res.json({ proposals, unpaid });
 });
 
+// 본부별 항목(매출/연구과제비/매입/판관비/공통비) 상세 리스트
+router.get('/division-breakdown', (req, res) => {
+  const divId = parseInt(req.query.division_id, 10);
+  const yearN = parseInt(req.query.year, 10) || new Date().getFullYear();
+  const year = String(yearN);
+  const type = req.query.type;
+  if (!divId || !type) return res.status(400).json({ error: 'division_id, type 필요' });
+  const NOT_G = "p.project_type_id NOT IN (SELECT id FROM project_types WHERE code='G')";
+  let rows = [], title = '', kind = 'txn';
+  if (type === 'sales') {
+    title = '매출';
+    rows = db.prepare(`SELECT p.id AS project_id, p.project_code, p.project_name, c.name AS customer_name, ps.invoice_date AS dt, ps.sales_amount AS amount
+      FROM project_sales ps JOIN projects p ON ps.project_id=p.id LEFT JOIN customers c ON p.customer_id=c.id
+      WHERE p.division_id=? AND p.status='수주완료' AND strftime('%Y',ps.invoice_date)=? AND ${NOT_G}
+      ORDER BY ps.invoice_date DESC`).all(divId, year);
+  } else if (type === 'research') {
+    title = '연구과제비';
+    rows = db.prepare(`SELECT p.id AS project_id, p.project_code, p.project_name, c.name AS customer_name, ps.invoice_date AS dt, ps.sales_amount AS amount
+      FROM project_sales ps JOIN projects p ON ps.project_id=p.id JOIN project_types pt ON p.project_type_id=pt.id LEFT JOIN customers c ON p.customer_id=c.id
+      WHERE p.division_id=? AND pt.code='G' AND p.research_stage IN ('선정','협약체결','수행중','최종평가','종료') AND strftime('%Y',ps.invoice_date)=?
+      ORDER BY ps.invoice_date DESC`).all(divId, year);
+  } else if (type === 'purchase') {
+    title = '매입';
+    rows = db.prepare(`SELECT p.id AS project_id, p.project_code, p.project_name, pp.vendor AS customer_name, pp.invoice_date AS dt, pp.purchase_amount AS amount
+      FROM project_purchases pp JOIN projects p ON pp.project_id=p.id
+      WHERE p.division_id=? AND p.status='수주완료' AND strftime('%Y',pp.invoice_date)=? AND ${NOT_G}
+      ORDER BY pp.invoice_date DESC`).all(divId, year);
+  } else if (type === 'sga' || type === 'common') {
+    title = type === 'sga' ? '판관비' : '공통비';
+    kind = 'monthly';
+    const col = type === 'sga' ? 'sga' : 'common_cost';
+    rows = db.prepare(`SELECT month, ${col} AS amount FROM division_monthly_expenses WHERE division_id=? AND year=? ORDER BY month`).all(divId, yearN);
+  } else {
+    return res.status(400).json({ error: '알 수 없는 type' });
+  }
+  res.json({ type, title, kind, rows, total: rows.reduce((s, r) => s + (r.amount || 0), 0) });
+});
+
 module.exports = router;

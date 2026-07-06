@@ -3,19 +3,19 @@ renderLayout('대시보드');
 // 본부별 표 컬럼 정의 (기본 표시) - 다른 변수보다 먼저 선언되어야 함
 const DEFAULT_DIV_COLS = [
   { key: 'division_name',       label: '본부',          align: 'left',  visible: true },
-  { key: 'target_revenue',      label: '매출목표',      align: 'right', visible: true },
-  { key: 'actual_revenue',      label: '매출',          align: 'right', visible: true },
-  { key: 'research_revenue',    label: '연구과제비',    align: 'right', visible: true },
-  { key: 'achievement_rate',    label: '매출달성률',    align: 'right', visible: true },
-  { key: 'purchase',            label: '매입',          align: 'right', visible: true },
-  { key: 'gross_profit',        label: '매출이익',      align: 'right', visible: true },
-  { key: 'gross_profit_target', label: '매출이익목표',  align: 'right', visible: true },
-  { key: 'gross_profit_rate',   label: '매출이익달성률', align: 'right', visible: true },
-  { key: 'sga',                 label: '판관비',        align: 'right', visible: true },
-  { key: 'common_cost',         label: '공통비',        align: 'right', visible: true },
-  { key: 'operating_profit',    label: '영업이익',      align: 'right', visible: true },
-  { key: 'target_profit',       label: '이익목표',      align: 'right', visible: true },
-  { key: 'profit_rate',         label: '영업이익달성률', align: 'right', visible: true }
+  { key: 'actual_revenue',      label: '① 매출',                 align: 'right', visible: true },
+  { key: 'research_revenue',    label: '② 연구과제비',           align: 'right', visible: true },
+  { key: 'purchase',            label: '③ 매입',                 align: 'right', visible: true },
+  { key: 'gross_profit',        label: '④ 매출이익',    formula: '①+②-③', align: 'right', visible: true },
+  { key: 'gross_profit_target', label: '⑤ 매출이익목표', formula: '⑥+⑦+⑨', align: 'right', visible: true },
+  { key: 'gross_profit_rate',   label: '매출이익달성률', formula: '④/⑤',   align: 'right', visible: true },
+  { key: 'sga',                 label: '⑥ 판관비',      align: 'right', visible: true },
+  { key: 'common_cost',         label: '⑦ 공통비',      align: 'right', visible: true },
+  { key: 'operating_profit',    label: '⑧ 영업이익',    formula: '④-⑥-⑦', align: 'right', visible: true },
+  { key: 'target_profit',       label: '⑨ 이익목표',    align: 'right', visible: true },
+  { key: 'profit_rate',         label: '영업이익달성률', formula: '⑧/⑨',   align: 'right', visible: true },
+  { key: 'target_revenue',      label: '매출목표',               align: 'right', visible: false },
+  { key: 'achievement_rate',    label: '매출달성률',             align: 'right', visible: false }
 ];
 
 let year = new Date().getFullYear();
@@ -26,7 +26,7 @@ let lastDivData = null;
 
 function loadDivCols() {
   try {
-    const saved = JSON.parse(localStorage.getItem('miso_dashboard_div_cols') || 'null');
+    const saved = JSON.parse(localStorage.getItem('miso_dashboard_div_cols_v3') || 'null');
     if (!saved) return DEFAULT_DIV_COLS.map(c => ({ ...c }));
     // 누락된 컬럼은 뒤에 추가
     const map = new Map(saved.map(c => [c.key, c]));
@@ -39,7 +39,7 @@ function loadDivCols() {
   } catch { return DEFAULT_DIV_COLS.map(c => ({ ...c })); }
 }
 function saveDivCols() {
-  localStorage.setItem('miso_dashboard_div_cols', JSON.stringify(
+  localStorage.setItem('miso_dashboard_div_cols_v3', JSON.stringify(
     divCols.map(c => ({ key: c.key, visible: c.visible !== false }))
   ));
 }
@@ -75,6 +75,8 @@ async function init() {
 
   // 본부명 클릭 이벤트 위임 (테이블이 매번 다시 그려져도 동작)
   document.getElementById('divTbody').addEventListener('click', (e) => {
+    const bd = e.target.closest('.bd-link');
+    if (bd) { showBreakdown(bd.dataset.did, bd.dataset.nm, bd.dataset.bd); return; }
     const link = e.target.closest('.div-detail-link');
     if (!link) return;
     const did = link.dataset.did;
@@ -117,7 +119,7 @@ function renderKPI(t) {
     <div class="stat-card ${t.gross_profit < 0 ? 'danger' : 'success'}">
       <div class="label">매출이익 (매출 + 연구과제비 − 매입)</div>
       <div class="value">${f(t.gross_profit)}</div>
-      <div class="sub">매출이익목표 ${f(t.gross_profit_target)} · 연구과제 포함</div>
+      <div class="sub">매출이익목표 (판관비+공통비+이익목표) ${f(t.gross_profit_target)}</div>
     </div>
     <div class="stat-card ${pctClass(t.gross_profit_rate)==='danger'?'danger':(pctClass(t.gross_profit_rate)==='success'?'success':'warning')}">
       <div class="label">매출이익달성률</div>
@@ -143,15 +145,15 @@ function renderDivTable(divs, total) {
   const cellRenderers = {
     division_name: d => `<td><strong class="div-detail-link" data-did="${d.division_id}" style="cursor:pointer;color:#2563eb;text-decoration:underline;" title="클릭하여 상세 보기">${d.division_name}</strong></td>`,
     target_revenue: d => `<td class="num">${f(d.target_revenue)}</td>`,
-    actual_revenue: d => `<td class="num">${f(d.actual_revenue)}</td>`,
-    research_revenue: d => `<td class="num" style="color:#7c3aed;">${f(d.research_revenue || 0)}</td>`,
+    actual_revenue: d => `<td class="num"><span class="bd-link" data-did="${d.division_id}" data-bd="sales" data-nm="${esc(d.division_name)}" style="cursor:pointer;color:#2563eb;text-decoration:underline;">${f(d.actual_revenue)}</span></td>`,
+    research_revenue: d => `<td class="num"><span class="bd-link" data-did="${d.division_id}" data-bd="research" data-nm="${esc(d.division_name)}" style="cursor:pointer;color:#7c3aed;text-decoration:underline;">${f(d.research_revenue || 0)}</span></td>`,
     achievement_rate: d => `<td class="num" style="min-width:120px;">${progressBar(d.achievement_rate)}</td>`,
-    purchase: d => `<td class="num">${f(d.purchase)}</td>`,
+    purchase: d => `<td class="num"><span class="bd-link" data-did="${d.division_id}" data-bd="purchase" data-nm="${esc(d.division_name)}" style="cursor:pointer;color:#2563eb;text-decoration:underline;">${f(d.purchase)}</span></td>`,
     gross_profit: d => `<td class="num ${d.gross_profit < 0 ? 'text-danger' : ''} fw-bold">${f(d.gross_profit)}</td>`,
     gross_profit_target: d => `<td class="num">${f(d.gross_profit_target)}</td>`,
     gross_profit_rate: d => `<td class="num" style="min-width:120px;">${progressBar(d.gross_profit_rate)}</td>`,
-    sga: d => `<td class="num">${f(d.sga)}</td>`,
-    common_cost: d => `<td class="num">${f(d.common_cost)}</td>`,
+    sga: d => `<td class="num"><span class="bd-link" data-did="${d.division_id}" data-bd="sga" data-nm="${escAttr(d.division_name)}" style="cursor:pointer;color:#2563eb;text-decoration:underline;">${f(d.sga)}</span></td>`,
+    common_cost: d => `<td class="num"><span class="bd-link" data-did="${d.division_id}" data-bd="common" data-nm="${escAttr(d.division_name)}" style="cursor:pointer;color:#2563eb;text-decoration:underline;">${f(d.common_cost)}</span></td>`,
     operating_profit: d => `<td class="num ${d.operating_profit < 0 ? 'text-danger' : 'text-success'} fw-bold">${f(d.operating_profit)}</td>`,
     target_profit: d => `<td class="num">${f(d.target_profit)}</td>`,
     profit_rate: d => `<td class="num" style="min-width:120px;">${progressBar(d.profit_rate)}</td>`,
@@ -176,7 +178,7 @@ function renderDivTable(divs, total) {
   const visCols = divCols.filter(c => c.visible !== false);
   // thead
   document.getElementById('divThead').innerHTML = `<tr>${visCols.map(c =>
-    `<th class="${c.align==='right'?'num':''}">${c.label}</th>`).join('')}</tr>`;
+    `<th style="text-align:center;vertical-align:middle;">${c.label}${c.formula ? `<div style="font-size:13px;font-weight:400;color:#94a3b8;margin-top:2px;">(${c.formula})</div>` : ''}</th>`).join('')}</tr>`;
   // tbody
   document.getElementById('divTbody').innerHTML = divs.map(d =>
     `<tr>${visCols.map(c => (cellRenderers[c.key] || (()=>'<td></td>'))(d)).join('')}</tr>`
@@ -185,6 +187,90 @@ function renderDivTable(divs, total) {
   document.getElementById('divTfoot').innerHTML = `<tr style="background:#f1f5f9;font-weight:600;">${visCols.map(c =>
     (totalRenderers[c.key] || (()=>'<td></td>'))(total)
   ).join('')}</tr>`;
+}
+
+// 본부별 항목 상세 리스트 팝업
+function openBreakdownDetail(pid, type) {
+  if (!pid) return;
+  if (type === 'research') {
+    if (document.querySelector('.detail-popup-back')) return;
+    const b = document.createElement('div');
+    b.className = 'detail-popup-back';
+    b.innerHTML = `<div class="detail-popup"><div class="dp-head"><h3>과제 상세</h3><button class="dp-close" title="닫기">&times;</button></div>`
+      + `<iframe src="research-detail.html?id=${encodeURIComponent(pid)}&popup=1"></iframe></div>`;
+    document.body.appendChild(b);
+    const onEsc = ev => { if (ev.key === 'Escape') close(); };
+    const close = () => { b.remove(); document.removeEventListener('keydown', onEsc); };
+    b.querySelector('.dp-close').onclick = close;
+    b.addEventListener('click', e => { if (e.target === b) close(); });
+    document.addEventListener('keydown', onEsc);
+  } else {
+    openDetailPopup(pid);
+  }
+}
+
+async function showBreakdown(divId, divName, type) {
+  let data;
+  try {
+    data = await api.get(`/api/dashboard/division-breakdown?division_id=${divId}&year=${year}&type=${type}`);
+  } catch (e) { toast('조회 실패: ' + e.message, 'error'); return; }
+  const rows = (data.rows || []).slice();
+  const monthly = data.kind === 'monthly';
+
+  const cols = monthly
+    ? [
+        { key: 'month', label: '월', num: false, get: r => r.month || 0, disp: r => (r.month || '') + '월' },
+        { key: 'amount', label: '금액', num: true, get: r => r.amount || 0, disp: r => fmtWon(r.amount) },
+      ]
+    : [
+        { key: 'dt', label: '일자', num: false, cell: 'font-size:12px;', get: r => r.dt || '', disp: r => (r.dt || '').slice(0, 10) },
+        { key: 'amount', label: '금액', num: true, get: r => r.amount || 0, disp: r => fmtWon(r.amount) },
+        { key: 'customer_name', label: type === 'purchase' ? '매입업체' : '고객명', num: false, get: r => r.customer_name || '', disp: r => esc(r.customer_name || '') },
+        { key: 'project_name', label: '사업명', num: false, get: r => r.project_name || '', disp: r => `<span class="bd-proj" data-pid="${r.project_id || ''}" style="color:#2563eb;cursor:pointer;text-decoration:underline;">${esc(r.project_name || '')}</span>` },
+      ];
+
+  let sortKey = monthly ? 'month' : 'dt';
+  let sortDir = monthly ? 1 : -1; // 월 오름차순 / 일자 내림차순 기본
+
+  const sortRows = () => {
+    const col = cols.find(c => c.key === sortKey);
+    rows.sort((a, b) => {
+      const va = col.get(a), vb = col.get(b);
+      if (va < vb) return -sortDir;
+      if (va > vb) return sortDir;
+      return 0;
+    });
+  };
+  const renderHead = () => cols.map(c => {
+    const arrow = c.key === sortKey ? (sortDir === 1 ? ' ▲' : ' ▼') : '';
+    return `<th class="bd-th${c.num ? ' num' : ''}" data-k="${c.key}" style="cursor:pointer;user-select:none;white-space:nowrap;">${c.label}${arrow}</th>`;
+  }).join('');
+  const renderBody = () => rows.length
+    ? rows.map(r => `<tr>${cols.map(c => `<td class="${c.num ? 'num' : ''}"${c.cell ? ` style="${c.cell}"` : ''}>${c.disp(r)}</td>`).join('')}</tr>`).join('')
+    : `<tr><td colspan="${cols.length}" class="empty">데이터가 없습니다.</td></tr>`;
+
+  sortRows();
+  const back = openModal(`${esc(divName)} · ${data.title} (${year}년) — ${rows.length}건`, `
+    <div style="text-align:right;font-size:13px;margin-bottom:8px;">합계 <strong style="color:var(--primary);">${fmtWon(data.total)}</strong></div>
+    <div class="table-wrap" style="max-height:460px;overflow:auto;"><table class="data" id="bdTable"><thead><tr>${renderHead()}</tr></thead><tbody>${renderBody()}</tbody></table></div>
+  `, () => true, { saveText: '확인' });
+
+  const modalEl = back.querySelector('.modal');
+  if (modalEl) { modalEl.style.maxWidth = '880px'; modalEl.style.width = '92vw'; }
+
+  const tableEl = back.querySelector('#bdTable');
+  tableEl.querySelector('thead').addEventListener('click', e => {
+    const th = e.target.closest('.bd-th'); if (!th) return;
+    const k = th.dataset.k;
+    if (sortKey === k) sortDir = -sortDir; else { sortKey = k; sortDir = 1; }
+    sortRows();
+    tableEl.querySelector('thead tr').innerHTML = renderHead();
+    tableEl.querySelector('tbody').innerHTML = renderBody();
+  });
+  tableEl.querySelector('tbody').addEventListener('click', e => {
+    const s = e.target.closest('.bd-proj'); if (!s) return;
+    openBreakdownDetail(s.dataset.pid, type);
+  });
 }
 
 function renderCharts(monthly) {

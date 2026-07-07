@@ -357,7 +357,8 @@ async function loadEmployees() {
     <div class="flex-between mb-16">
       <div class="text-muted">직원 ${list.length}명${showInactiveEmp ? '' : ` <span style="font-size:12px;">(활성만 · 비활성 ${inactiveCnt}명 숨김)</span>`}</div>
       <div class="flex gap-8" style="align-items:center;">
-        <input id="empSearch" placeholder="이름 / 사원번호 / 본부 / 팀 / 직급 / 이메일 검색" value="${esc(_empKeyword)}" style="width:320px;">
+        <input id="empSearch" placeholder="이름 / 사원번호 / 본부 / 팀 / 직급 / 이메일 (엔터로 검색)" value="${esc(_empKeyword)}" style="width:320px;">
+        <button class="btn" id="empSearchBtn">검색</button>
         <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;">
           <input type="checkbox" id="chkInactiveEmp" style="width:auto;" ${showInactiveEmp ? 'checked' : ''}> 비활성 포함
         </label>
@@ -384,13 +385,15 @@ async function loadEmployees() {
       </tbody></table></div>`;
 
   const search = body.querySelector('#empSearch');
-  search.oninput = (e) => {
-    _empKeyword = e.target.value;
+  const doEmpSearch = () => {
+    _empKeyword = search.value;
     loadEmployees().then(() => {
       const s = body.querySelector('#empSearch');
       if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); }
     });
   };
+  search.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); doEmpSearch(); } };
+  body.querySelector('#empSearchBtn').onclick = doEmpSearch;
   body.querySelector('#chkInactiveEmp').onchange = (e) => { showInactiveEmp = e.target.checked; loadEmployees(); };
   body.querySelector('#addEmpBtn').onclick = () => editEmployee(null, divs);
   body.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => editEmployee(b.dataset.edit, divs));
@@ -573,7 +576,8 @@ async function loadCustomers() {
     <div class="flex-between mb-16">
       <div class="text-muted">총 ${list.length}개 고객사</div>
       <div class="flex gap-8">
-        <input id="custSearch" placeholder="고객사명 / 사업자번호 / 대표자 / 도메인 / 주소 검색" style="width:320px;">
+        <input id="custSearch" placeholder="고객사명 / 사업자번호 / 대표자 / 도메인 / 주소 (엔터로 검색)" style="width:320px;">
+        <button class="btn" id="custSearchBtn">검색</button>
         <button class="btn btn-primary" id="addBtn">+ 고객사 추가</button>
       </div>
     </div>
@@ -607,11 +611,14 @@ async function loadCustomers() {
   };
   render(list);
   document.getElementById('addBtn').onclick = () => editCustomer(null);
-  document.getElementById('custSearch').addEventListener('input', e => {
-    const kw = e.target.value.trim().toLowerCase();
+  const custInput = document.getElementById('custSearch');
+  const doCustSearch = () => {
+    const kw = custInput.value.trim().toLowerCase();
     render(list.filter(c => !kw || [c.name, c.business_no, c.corp_no, c.ceo_name, c.ceo_phone, c.phone, c.top_domain, c.sub_domain, c.industry, c.legal_type, c.address, c.detail_address]
       .some(f => (f || '').toLowerCase().includes(kw))));
-  });
+  };
+  custInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); doCustSearch(); } });
+  document.getElementById('custSearchBtn').onclick = doCustSearch;
 }
 
 // 고객사명 클릭 → 관련 사업 서머리 팝업

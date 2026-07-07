@@ -350,17 +350,14 @@ async function loadEmployees() {
   const inactiveCnt = base.filter(u => !u.active).length;
   let list = showInactiveEmp ? base : base.filter(u => u.active);
   const kw = _empKeyword.trim().toLowerCase();
-  if (kw) list = list.filter(u =>
-    (u.name || '').toLowerCase().includes(kw) ||
-    (u.employee_number || '').toLowerCase().includes(kw) ||
-    (u.hq || divMap[u.division_id] || '').toLowerCase().includes(kw) ||
-    (u.team || '').toLowerCase().includes(kw));
+  if (kw) list = list.filter(u => [u.name, u.employee_number, u.hq, divMap[u.division_id], u.team, u.position, u.email, u.phone]
+    .some(f => (f || '').toLowerCase().includes(kw)));
 
   body.innerHTML = `
     <div class="flex-between mb-16">
       <div class="text-muted">직원 ${list.length}명${showInactiveEmp ? '' : ` <span style="font-size:12px;">(활성만 · 비활성 ${inactiveCnt}명 숨김)</span>`}</div>
       <div class="flex gap-8" style="align-items:center;">
-        <input id="empSearch" placeholder="이름 / 사원번호 / 본부 / 팀 검색" value="${esc(_empKeyword)}" style="width:240px;">
+        <input id="empSearch" placeholder="이름 / 사원번호 / 본부 / 팀 / 직급 / 이메일 검색" value="${esc(_empKeyword)}" style="width:320px;">
         <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;">
           <input type="checkbox" id="chkInactiveEmp" style="width:auto;" ${showInactiveEmp ? 'checked' : ''}> 비활성 포함
         </label>
@@ -576,7 +573,7 @@ async function loadCustomers() {
     <div class="flex-between mb-16">
       <div class="text-muted">총 ${list.length}개 고객사</div>
       <div class="flex gap-8">
-        <input id="custSearch" placeholder="고객사명 검색" style="width:240px;">
+        <input id="custSearch" placeholder="고객사명 / 사업자번호 / 대표자 / 도메인 / 주소 검색" style="width:320px;">
         <button class="btn btn-primary" id="addBtn">+ 고객사 추가</button>
       </div>
     </div>
@@ -611,8 +608,9 @@ async function loadCustomers() {
   render(list);
   document.getElementById('addBtn').onclick = () => editCustomer(null);
   document.getElementById('custSearch').addEventListener('input', e => {
-    const kw = e.target.value.toLowerCase();
-    render(list.filter(c => !kw || (c.name || '').toLowerCase().includes(kw)));
+    const kw = e.target.value.trim().toLowerCase();
+    render(list.filter(c => !kw || [c.name, c.business_no, c.corp_no, c.ceo_name, c.ceo_phone, c.phone, c.top_domain, c.sub_domain, c.industry, c.legal_type, c.address, c.detail_address]
+      .some(f => (f || '').toLowerCase().includes(kw))));
   });
 }
 

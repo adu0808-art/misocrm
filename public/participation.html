@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>참여인력 관리 | MISO CRM</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app">
+  <main class="main">
+    <div class="content">
+      <div class="card">
+        <div class="card-header">
+          <h2>참여인력 관리 <small class="text-muted" style="font-weight:400;font-size:12px;">전 직원 월별 과제 참여율(모든 과제 합산)</small></h2>
+        </div>
+        <div class="card-body">
+          <div class="filter-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;align-items:end;">
+            <div><label class="text-muted" style="font-size:12px;">기준연도</label><div id="ss_year"></div></div>
+            <div><label class="text-muted" style="font-size:12px;">본부</label><div id="ss_div"></div></div>
+            <div><label class="text-muted" style="font-size:12px;">성명 검색</label><input id="f_kw" placeholder="이름"></div>
+            <div class="flex gap-8" style="flex-wrap:wrap;">
+              <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;"><input type="checkbox" id="chkOver" style="width:auto;"> 과배정(&gt;100%)만</label>
+              <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;"><input type="checkbox" id="chkAll" style="width:auto;"> 미참여 직원 포함</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header" style="flex-wrap:wrap;gap:8px;">
+          <div id="summary" class="text-muted" style="font-size:13px;"></div>
+        </div>
+        <div class="card-body" style="padding:0;">
+          <div class="table-wrap"><table class="data" id="pmTable">
+            <thead><tr id="pmHead"></tr></thead>
+            <tbody id="pmBody"></tbody>
+          </table></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="js/common.js"></script>
+<script src="js/components.js"></script>
+<script src="js/participation.js"></script>
+</body>
+</html>

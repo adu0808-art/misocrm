@@ -468,6 +468,10 @@ table.inline-edit td input[readonly], table.inline-edit td .ie-readonly {
   background: #f1f5f9; color: var(--text-muted);
 }
 table.inline-edit td .currency-input input { padding-right: 22px; text-align: right; }
+/* 참여비율 등 숫자 입력 스핀(업다운) 버튼 제거 */
+input.m-mo::-webkit-outer-spin-button,
+input.m-mo::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+input.m-mo { -moz-appearance: textfield; appearance: textfield; }
 table.inline-edit td.act-cell { text-align: center; white-space: nowrap; width: 60px; }
 table.inline-edit td.act-cell button { padding: 4px 6px; }
 table.inline-edit textarea {

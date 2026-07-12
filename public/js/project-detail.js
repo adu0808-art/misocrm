@@ -150,14 +150,14 @@ function renderBasic() {
     </div>
 
     <div class="card">
-      <div class="card-header"><h3>기타 정보 / 사업개요</h3></div>
+      <div class="card-header"><h3>기타 정보</h3></div>
       <div class="card-body">
         <div class="grid-form">
           <div class="form-row"><label>SW실적 등록</label><select id="b_sw"><option value="N" ${project.sw_registered!=='Y'?'selected':''}>N</option><option value="Y" ${project.sw_registered==='Y'?'selected':''}>Y</option></select></div>
           <div class="form-row"><label>예상 경쟁사</label><input id="b_comp" value="${escapeAttr(project.competitor)}"></div>
           <div class="form-row full"><label>소개 경로</label><input id="b_intro" value="${escapeAttr(project.intro_channel)}"></div>
-          <div class="form-row full"><label>사업 개요</label><textarea id="b_overview" rows="6">${escapeHtml(project.overview)}</textarea></div>
         </div>
+        <p class="text-muted" style="font-size:12px;margin-top:12px;">※ 사업 개요는 <strong>[사업 개요]</strong> 탭에서 웹에디터로 작성합니다.</p>
       </div>
     </div>
   `;
@@ -285,7 +285,7 @@ async function saveBasic() {
     sw_registered: v('b_sw'),
     competitor: v('b_comp'),
     intro_channel: v('b_intro'),
-    overview: v('b_overview'),
+    overview: project.overview,
     top_domain: v('b_top'),
     sub_domain: v('b_sub'),
     is_favorite: project.is_favorite || 0,
@@ -301,7 +301,35 @@ async function saveBasic() {
   } catch (e) { toast(e.message, 'error'); }
 }
 
+// ===== 사업 개요 (웹에디터) =====
+function isBlankHtml(h) {
+  return !h || !String(h).replace(/<[^>]*>/g, '').replace(/&nbsp;/g, '').replace(/\s+/g, '').trim();
+}
+function renderProjectOverview() {
+  const blank = isBlankHtml(project.overview);
+  document.getElementById('tab-overview').innerHTML = `
+    <div class="card"><div class="card-body">
+      <div class="flex-between mb-16">
+        <h3 style="margin:0;">사업 개요</h3>
+        <button class="btn btn-primary btn-sm" id="ovEdit">✎ 편집</button>
+      </div>
+      <div class="overview-view ${blank ? 'is-empty' : ''}" id="ovView">${blank ? '' : project.overview}</div>
+    </div></div>`;
+  document.getElementById('ovEdit').onclick = async () => {
+    if (typeof RichEditor === 'undefined') { toast('에디터를 불러오지 못했습니다.', 'error'); return; }
+    const res = await RichEditor.open({ title: '사업 개요 편집', html: project.overview || '' });
+    if (!res) return;
+    project.overview = isBlankHtml(res.html) ? null : res.html;
+    try {
+      await api.put('/api/projects/' + PROJECT_ID, project);
+      toast('사업 개요가 저장되었습니다.', 'success');
+      renderProjectOverview();
+    } catch (e) { toast('저장 실패: ' + e.message, 'error'); }
+  };
+}
+
 function loadTab(name) {
+  if (name === 'overview') return renderProjectOverview();
   if (name === 'solutions') return loadSolutions();
   if (name === 'sales') return loadSales();
   if (name === 'purchases') return loadPurchases();

@@ -63,21 +63,28 @@ function cellColor(v) {
 
 function render() {
   const rows = currentRows();
+  const empByNo = new Map(employees.filter(e => e.employee_number).map(e => [e.employee_number, e]));
   const head = document.getElementById('pmHead');
-  head.innerHTML = `<th style="min-width:96px;position:sticky;left:0;background:#f8fafc;z-index:1;">성명</th><th style="min-width:120px;">본부</th><th style="width:64px;">직급</th><th class="num" style="width:52px;">과제</th>`
-    + Array.from({ length: 12 }, (_, i) => `<th class="num" style="width:52px;">${i + 1}월</th>`).join('')
-    + `<th class="num" style="width:60px;">최대</th>`;
+  head.innerHTML = `<th style="width:78px;position:sticky;left:0;background:#f8fafc;z-index:1;">성명</th><th style="width:80px;">본부</th><th style="width:56px;">직급</th><th class="num" style="width:40px;">과제</th>`
+    + Array.from({ length: 12 }, (_, i) => `<th class="num" style="width:38px;padding:8px 2px;">${i + 1}월</th>`).join('')
+    + `<th class="num" style="width:46px;">최대</th><th style="width:260px;">비고</th>`;
 
   const body = document.getElementById('pmBody');
-  body.innerHTML = rows.length ? rows.map(r => `
+  body.innerHTML = rows.length ? rows.map(r => {
+    const emp = r.employee_number ? empByNo.get(r.employee_number) : null;
+    const noteCell = emp
+      ? `<input class="pm-note" data-id="${emp.id}" value="${esc(emp.note || '')}" placeholder="비고" style="width:248px;font-size:12px;">`
+      : `<input value="" placeholder="-" disabled style="width:248px;font-size:12px;background:#f1f5f9;">`;
+    return `
     <tr data-key="${esc(r.key)}"${r.active ? '' : ' style="opacity:.5;"'}>
-      <td style="position:sticky;left:0;background:#fff;z-index:1;"><span class="pm-name" style="color:#2563eb;cursor:pointer;text-decoration:underline;font-weight:600;white-space:nowrap;">${esc(r.name)}</span>${r.employee_number ? '' : ' <span class="text-muted" style="font-size:10px;">(자유)</span>'}</td>
-      <td style="font-size:12px;white-space:nowrap;">${esc(r.org || '')}</td>
+      <td style="position:sticky;left:0;background:#fff;z-index:1;"><div style="max-width:76px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(r.name)}"><span class="pm-name" style="color:#2563eb;cursor:pointer;text-decoration:underline;font-weight:600;">${esc(r.name)}</span>${r.employee_number ? '' : '<span class="text-muted" style="font-size:10px;">(자유)</span>'}</div></td>
+      <td style="font-size:12px;"><div style="max-width:76px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(r.org || '')}">${esc(r.org || '')}</div></td>
       <td style="font-size:12px;">${esc(r.position || '')}</td>
       <td class="num">${r.projectCount || ''}</td>
-      ${r.months.map(v => `<td class="num" style="${cellColor(v)}">${v ? v : '·'}</td>`).join('')}
-      <td class="num" style="${cellColor(r.maxMonth)}">${r.maxMonth || '·'}</td>
-    </tr>`).join('') : `<tr><td colspan="17" class="empty">표시할 인력이 없습니다.</td></tr>`;
+      ${r.months.map(v => `<td class="num" style="${cellColor(v)}padding:4px 2px;">${v ? v : '·'}</td>`).join('')}
+      <td class="num" style="${cellColor(r.maxMonth)}padding:4px 3px;">${r.maxMonth || '·'}</td>
+      <td>${noteCell}</td>
+    </tr>`; }).join('') : `<tr><td colspan="18" class="empty">표시할 인력이 없습니다.</td></tr>`;
 
   const over = rows.filter(r => r.maxMonth > 100).length;
   const participants = rows.filter(r => r.projectCount > 0).length;
@@ -86,6 +93,20 @@ function render() {
 
   body.querySelectorAll('tr[data-key]').forEach(tr => {
     tr.querySelector('.pm-name').onclick = () => showDetail(rows.find(r => r.key === tr.dataset.key));
+  });
+  // 비고 저장 (직원별 users.note) — 전체 필드 보존 위해 기존 직원 객체와 병합
+  body.querySelectorAll('.pm-note').forEach(inp => {
+    inp.addEventListener('change', async () => {
+      const id = Number(inp.dataset.id);
+      const emp = employees.find(e => e.id === id);
+      if (!emp) return;
+      const val = inp.value.trim() || null;
+      try {
+        await api.put('/api/masters/users/' + id, { ...emp, note: val });
+        emp.note = val;
+        toast('비고 저장', 'success');
+      } catch (e) { toast('비고 저장 실패: ' + e.message, 'error'); }
+    });
   });
 }
 

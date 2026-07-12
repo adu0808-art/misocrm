@@ -71,10 +71,38 @@ function researchBody() {
 
 function loadTab(name) {
   if (name === 'basic') return renderBasic();
+  if (name === 'overview') return renderOverview();
   if (name === 'members') return loadMembers();
   if (name === 'costs') return loadCosts();
   if (name === 'funds') return loadFunds();
   if (name === 'summary') return renderSummary();
+}
+
+// ===== 과제 개요 (웹에디터) =====
+function isBlankHtml(h) {
+  return !h || !String(h).replace(/<[^>]*>/g, '').replace(/&nbsp;/g, '').replace(/\s+/g, '').trim();
+}
+function renderOverview() {
+  const blank = isBlankHtml(research.overview);
+  document.getElementById('tab-overview').innerHTML = `
+    <div class="card"><div class="card-body">
+      <div class="flex-between mb-16">
+        <h3 style="margin:0;">과제 개요</h3>
+        <button class="btn btn-primary btn-sm" id="ovEdit">✎ 편집</button>
+      </div>
+      <div class="overview-view ${blank ? 'is-empty' : ''}" id="ovView">${blank ? '' : research.overview}</div>
+    </div></div>`;
+  document.getElementById('ovEdit').onclick = async () => {
+    if (typeof RichEditor === 'undefined') { toast('에디터를 불러오지 못했습니다.', 'error'); return; }
+    const res = await RichEditor.open({ title: '과제 개요 편집', html: research.overview || '' });
+    if (!res) return;
+    research.overview = isBlankHtml(res.html) ? null : res.html;
+    try {
+      await api.put('/api/research/' + RID, researchBody());
+      toast('과제 개요가 저장되었습니다.', 'success');
+      renderOverview();
+    } catch (e) { toast('저장 실패: ' + e.message, 'error'); }
+  };
 }
 
 // ===== 기본정보 =====
@@ -95,8 +123,9 @@ function renderBasic() {
       <div class="form-row"><label>정부출연금</label>${currencyHtml('b_gov', r.gov_fund)}</div>
       <div class="form-row"><label>민간부담금(현금)</label>${currencyHtml('b_pcash', r.private_cash)}</div>
       <div class="form-row"><label>민간부담금(현물)</label>${currencyHtml('b_pinkind', r.private_inkind)}</div>
-      <div class="form-row" style="grid-column:1/-1;"><label>과제 개요</label><textarea id="b_overview" rows="3">${esca(r.overview)}</textarea></div>
-    </div></div></div>`;
+    </div>
+    <p class="text-muted" style="font-size:12px;margin-top:12px;">※ 과제 개요는 <strong>[과제 개요]</strong> 탭에서 웹에디터로 작성합니다.</p>
+    </div></div>`;
   bindCurrencyInputs(document.getElementById('tab-basic'));
 }
 
@@ -117,7 +146,7 @@ function collectBasic() {
   research.gov_fund = currencyValue(g('b_gov'));
   research.private_cash = currencyValue(g('b_pcash'));
   research.private_inkind = currencyValue(g('b_pinkind'));
-  research.overview = g('b_overview').value.trim() || null;
+  // 과제 개요는 '과제 개요' 탭(웹에디터)에서 관리 — 여기서 건드리지 않음
 }
 
 async function saveBasic() {
@@ -130,20 +159,21 @@ async function saveBasic() {
 // ===== 참여연구원 =====
 async function loadMembers() {
   const rows = await api.get('/api/research-members?project_id=' + RID);
-  const monthTh = Array.from({ length: 12 }, (_, i) => `<th style="width:48px;">${i + 1}월</th>`).join('');
+  const totalLabor = rows.reduce((s, r) => s + (r.labor_cost || 0), 0);
+  const monthTh = Array.from({ length: 12 }, (_, i) => `<th style="width:38px;">${i + 1}월</th>`).join('');
   const dlOpts = employees.filter(e => !e.is_login)
     .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'))
     .map(e => `<option value="${esca(e.name)}">${esca(e.hq || '')}${e.position ? ' ' + esca(e.position) : ''}</option>`).join('');
   document.getElementById('tab-members').innerHTML = `
     <div class="card">
       <div class="card-header">
-        <h3>참여연구원 <small class="text-muted" style="font-size:12px;">${rows.length}명 · 월별 참여율(%)</small></h3>
+        <h3>참여연구원 <small class="text-muted" style="font-size:12px;">${rows.length}명 · 총 배분 인건비 <strong style="color:var(--primary);" id="mTotalLabor">${fmtWon(totalLabor)}</strong></small></h3>
         <button class="btn btn-primary btn-sm" id="addM">+ 추가</button>
       </div>
       <div class="card-body"><div class="table-wrap"><table class="inline-edit">
-        <thead><tr><th style="width:110px;">역할</th><th style="width:130px;">성명</th><th style="width:120px;">소속</th><th style="width:70px;">직급</th>
+        <thead><tr><th style="width:110px;">역할</th><th style="width:84px;">성명</th><th style="width:134px;">소속</th><th style="width:70px;">직급</th>
           ${monthTh}
-          <th style="width:130px;">연 인건비</th><th style="width:130px;">배분 인건비</th><th class="act-cell"></th></tr></thead>
+          <th style="width:116px;">연 인건비</th><th style="width:112px;">배분 인건비</th><th style="width:200px;">비고</th><th class="act-cell"></th></tr></thead>
         <tbody id="mBody"></tbody>
       </table></div>
       <datalist id="empDL">${dlOpts}</datalist>
@@ -160,24 +190,35 @@ function renderMemberRows(rows) {
   const body = document.getElementById('mBody');
   const monthCells = (r) => Array.from({ length: 12 }, (_, i) => {
     const v = r['m' + (i + 1)];
-    return `<td style="padding:2px;"><input type="number" class="m-mo" data-mo="${i + 1}" value="${v ?? ''}" min="0" max="100" step="0.1" style="width:44px;text-align:right;padding:4px 3px;"></td>`;
+    return `<td style="padding:1px;"><input type="number" class="m-mo" data-mo="${i + 1}" value="${v ?? ''}" min="0" max="100" step="0.1" style="width:34px;text-align:right;padding:4px 2px;"></td>`;
   }).join('');
   body.innerHTML = rows.map(r => `
     <tr data-id="${r.id}" data-empno="${esca(r.employee_number)}">
-      <td><select class="m-role">${MEMBER_ROLES.map(x => `<option ${r.role === x ? 'selected' : ''}>${x}</option>`).join('')}</select></td>
-      <td><input class="m-name" list="empDL" value="${esca(r.name)}" placeholder="직원 선택/입력" style="width:120px;"></td>
-      <td><input class="m-org" value="${esca(r.org)}" placeholder="소속" style="width:112px;"></td>
-      <td><input class="m-pos" value="${esca(r.position)}" placeholder="직급" style="width:64px;"></td>
+      <td><select class="m-role" style="width:104px;">${MEMBER_ROLES.map(x => `<option ${r.role === x ? 'selected' : ''}>${x}</option>`).join('')}</select></td>
+      <td><input class="m-name" list="empDL" value="${esca(r.name)}" placeholder="직원 선택/입력" style="width:84px;"></td>
+      <td><input class="m-org" value="${esca(r.org)}" placeholder="소속" style="width:128px;"></td>
+      <td><input class="m-pos" value="${esca(r.position)}" placeholder="직급" style="width:66px;"></td>
       ${monthCells(r)}
-      <td>${currencyHtml('m-ac-' + r.id, r.annual_cost, { cls: 'm-ac' })}</td>
-      <td><span class="m-lc ie-readonly" style="display:inline-block;padding:5px 7px;text-align:right;width:100%;font-variant-numeric:tabular-nums;">${fmtWon(r.labor_cost || 0)}</span></td>
+      <td style="min-width:116px;"><div style="width:108px;">${currencyHtml('m-ac-' + r.id, r.annual_cost, { cls: 'm-ac' })}</div></td>
+      <td style="min-width:112px;"><span class="m-lc ie-readonly" style="display:inline-block;padding:5px 6px;text-align:right;min-width:100px;font-variant-numeric:tabular-nums;">${fmtWon(r.labor_cost || 0)}</span></td>
+      <td><input class="m-note" value="${esca(r.note)}" placeholder="비고" style="width:190px;"></td>
       <td class="act-cell ie-row-actions">
         <button class="ie-icon-btn" data-alloc="${r.id}" title="월별 잔여 참여율">📊</button>
         <button class="ie-icon-btn" data-save="${r.id}" title="저장" style="color:var(--primary);">💾</button>
         <button class="ie-icon-btn danger" data-del="${r.id}" title="삭제">🗑</button>
       </td>
-    </tr>`).join('') || `<tr><td colspan="19" class="empty">+ 추가로 행을 만든 뒤 직원을 선택하거나 이름을 입력하세요.</td></tr>`;
+    </tr>`).join('') || `<tr><td colspan="20" class="empty">+ 추가로 행을 만든 뒤 직원을 선택하거나 이름을 입력하세요.</td></tr>`;
   bindCurrencyInputs(body);
+  const updateTotalLabor = () => {
+    let t = 0;
+    body.querySelectorAll('tr[data-id]').forEach(tr => {
+      const ac = currencyValue(tr.querySelector('.m-ac'));
+      const avg = [...tr.querySelectorAll('.m-mo')].reduce((s, el) => s + (Number(el.value) || 0), 0) / 12;
+      t += Math.round(ac * avg / 100);
+    });
+    const el = document.getElementById('mTotalLabor');
+    if (el) el.textContent = fmtWon(t);
+  };
   body.querySelectorAll('tr[data-id]').forEach(tr => {
     const nameInput = tr.querySelector('.m-name');
     const months = () => [...tr.querySelectorAll('.m-mo')].map(el => el.value === '' ? null : Number(el.value));
@@ -185,6 +226,7 @@ function renderMemberRows(rows) {
     const recalc = () => {
       const ac = currencyValue(tr.querySelector('.m-ac'));
       tr.querySelector('.m-lc').textContent = fmtWon(Math.round(ac * avg12() / 100));
+      updateTotalLabor();
     };
     // 성명 선택/입력 → 직원 매칭 시 소속·직급·사원번호 자동 채움(빈 칸만), 자유 입력이면 사원번호 해제
     const syncEmp = () => {
@@ -192,9 +234,14 @@ function renderMemberRows(rows) {
       const emp = employees.find(e => e.name === val && e.employee_number);
       if (emp) {
         tr.dataset.empno = emp.employee_number;
-        const org = tr.querySelector('.m-org'), pos = tr.querySelector('.m-pos');
+        const org = tr.querySelector('.m-org'), pos = tr.querySelector('.m-pos'), ac = tr.querySelector('.m-ac');
         if (!org.value.trim()) org.value = emp.hq || '';
         if (!pos.value.trim()) pos.value = emp.position || '';
+        // 연 인건비 = 직원 연봉 자동 채움 (비어 있을 때만)
+        if (ac && !currencyValue(ac) && emp.annual_salary) {
+          ac.value = String(emp.annual_salary);
+          ac.dispatchEvent(new Event('input', { bubbles: true })); // 콤마 포맷 + 배분 인건비 재계산
+        }
       } else {
         tr.dataset.empno = '';
       }
@@ -210,7 +257,8 @@ function renderMemberRows(rows) {
         project_id: Number(RID), role: tr.querySelector('.m-role').value, name: nameInput.value.trim(),
         employee_number: tr.dataset.empno || null,
         org: tr.querySelector('.m-org').value.trim(), position: tr.querySelector('.m-pos').value.trim(),
-        participation_rate: Math.round(avg12() * 10) / 10, annual_cost: ac, labor_cost: Math.round(ac * avg12() / 100)
+        participation_rate: Math.round(avg12() * 10) / 10, annual_cost: ac, labor_cost: Math.round(ac * avg12() / 100),
+        note: tr.querySelector('.m-note').value.trim() || null
       };
       mo.forEach((v, i) => { b['m' + (i + 1)] = v; });
       await api.put('/api/research-members/' + tr.dataset.id, b);

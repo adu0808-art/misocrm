@@ -513,6 +513,7 @@ function init() {
   addColumnIfMissing('users', 'cert2',         'TEXT'); addColumnIfMissing('users', 'cert2_date', 'TEXT');
   addColumnIfMissing('users', 'cert3',         'TEXT'); addColumnIfMissing('users', 'cert3_date', 'TEXT');
   addColumnIfMissing('users', 'cert4',         'TEXT'); addColumnIfMissing('users', 'cert4_date', 'TEXT');
+  addColumnIfMissing('users', 'note',          'TEXT');  // 직원 비고(참여인력 관리 등)
 
   // research_members: 월별 참여율(%) m1~m12 + 직원 연결(사원번호)
   for (let mo = 1; mo <= 12; mo++) addColumnIfMissing('research_members', 'm' + mo, 'REAL');

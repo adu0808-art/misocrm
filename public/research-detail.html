@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>과제 상세 | MISO CRM</title>
   <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/richEditor.css">
 </head>
 <body>
 <div class="app">
@@ -29,6 +30,7 @@
 
       <div class="tabs" id="detailTabs">
         <button class="tab active" data-tab="basic">기본정보</button>
+        <button class="tab" data-tab="overview">과제 개요</button>
         <button class="tab" data-tab="members">참여연구원</button>
         <button class="tab" data-tab="costs">연구비 집행</button>
         <button class="tab" data-tab="funds">연구비 수급</button>
@@ -36,6 +38,7 @@
       </div>
 
       <div class="tab-panel active" id="tab-basic"></div>
+      <div class="tab-panel" id="tab-overview"></div>
       <div class="tab-panel" id="tab-members"></div>
       <div class="tab-panel" id="tab-costs"></div>
       <div class="tab-panel" id="tab-funds"></div>
@@ -45,6 +48,7 @@
 </div>
 <script src="js/common.js"></script>
 <script src="js/components.js"></script>
+<script src="js/richEditor.js"></script>
 <script src="js/research-detail.js"></script>
 </body>
 </html>

@@ -63,7 +63,7 @@ router.use('/divisions', crud('divisions',
 (function employeeRouter() {
   const r = express.Router();
   const HR_FIELDS = ['birth_date', 'sci_tech_no', 'address', 'annual_salary', 'monthly_pay', 'base_pay', 'meal_allowance', 'overtime_allowance', 'childcare_allowance', 'ins_pension', 'ins_health', 'ins_employment', 'ins_accident', 'severance_monthly', 'severance_annual', 'severance_on_leave',
-    'career_period', 'career_start', 'edu_final', 'grad_school', 'grad_major', 'grad_year', 'university', 'univ_major', 'univ_year', 'cert1', 'cert1_date', 'cert2', 'cert2_date', 'cert3', 'cert3_date', 'cert4', 'cert4_date'];
+    'career_period', 'career_start', 'edu_final', 'grad_school', 'grad_major', 'grad_year', 'university', 'univ_major', 'univ_year', 'cert1', 'cert1_date', 'cert2', 'cert2_date', 'cert3', 'cert3_date', 'cert4', 'cert4_date', 'note'];
   const FIELDS = ['username', 'name', 'division_id', 'role', 'email', 'phone', 'active', 'is_login', 'position', 'employee_number', 'hq', 'team', 'hire_date', 'leave_date', ...HR_FIELDS];
   const SELECT_COLS = 'id, username, name, division_id, role, email, phone, active, is_login, position, employee_number, hq, team, hire_date, leave_date, ' + HR_FIELDS.join(', ') + ', last_login_at, created_at';
 

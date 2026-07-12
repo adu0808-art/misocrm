@@ -26,64 +26,80 @@ let divisionsCache = null;
 async function getDivisions() { return divisionsCache || (divisionsCache = await api.get('/api/masters/divisions')); }
 
 // ===== 사업본부 =====
-let divCheckYear = '';   // 유효성 확인 연도 ('' = 확인 안함)
+let _divUsers = [];   // 직원(비로그인) 캐시 — 총인원/상세용
+let _allDivs = [];    // 전체 본부 캐시 — 드래그 순서저장 시 숨김 본부 보존용
+let divYear = new Date().getFullYear();   // 기준연도
+let divShowEnded = false;                 // 유효종료(비유효) 본부 포함 여부
 async function loadDivisions() {
-  const list = await api.get('/api/masters/divisions');
   const cur = new Date().getFullYear();
-  const yearOpts = ['<option value="">전체 (확인 안함)</option>'];
-  for (let y = cur + 2; y >= cur - 5; y--) yearOpts.push(`<option value="${y}" ${String(y) === String(divCheckYear) ? 'selected' : ''}>${y}년</option>`);
-  const validCnt = divCheckYear ? list.filter(d => isDivisionValidForYear(d, divCheckYear)).length : list.length;
+  const [allDivs, users] = await Promise.all([api.get('/api/masters/divisions'), api.get('/api/masters/users')]);
+  _divUsers = users.filter(u => !u.is_login);
+  _allDivs = allDivs;
+  const year = divYear;
+  const statusOf = (d) => {
+    if (isDivisionValidForYear(d, year)) return { key: 'valid', label: '<span class="badge badge-수주완료">유효</span>' };
+    if (d.valid_to != null && d.valid_to !== '' && Number(d.valid_to) < year) return { key: 'ended', label: '<span class="badge badge-수주실패">유효종료</span>' };
+    return { key: 'future', label: '<span class="badge" style="background:#94a3b8;color:#fff;">시작전</span>' };
+  };
+  // 저장된 순서(sort_order)대로 표시 — 드래그로 변경 가능
+  let list = divShowEnded ? allDivs.slice() : divisionsForYear(allDivs, year);
+  list.sort((a, b) => ((a.sort_order ?? 0) - (b.sort_order ?? 0)) || (a.id - b.id));
+  const headcount = {};
+  _divUsers.forEach(u => { if (u.active && u.division_id != null) headcount[u.division_id] = (headcount[u.division_id] || 0) + 1; });
+  const yearOpts = [];
+  for (let y = cur + 2; y >= cur - 6; y--) yearOpts.push(`<option value="${y}" ${y === year ? 'selected' : ''}>${y}년</option>`);
+  const validCnt = list.filter(d => statusOf(d).key === 'valid').length;
 
   body.innerHTML = `
     <div class="flex-between mb-16">
-      <div class="text-muted">총 ${list.length}개 본부 ${divCheckYear ? `· <strong style="color:var(--primary);">${divCheckYear}년 유효 ${validCnt}개</strong>` : ''} <span style="font-size:12px;">· 행을 드래그하여 순서를 변경하면 정렬값이 자동 저장됩니다.</span></div>
+      <div class="text-muted"><strong style="color:var(--primary);">${year}년</strong> 기준 · 유효 ${validCnt}개${divShowEnded ? ` / 전체 ${list.length}개` : ''} <span style="font-size:12px;">· 행을 드래그하여 순서를 변경할 수 있습니다.</span></div>
       <div class="flex gap-8" style="align-items:center;">
-        <label class="text-muted" style="font-size:12px;">유효성 확인 연도</label>
-        <select id="divCheckYear" style="width:auto;">${yearOpts.join('')}</select>
+        <label class="text-muted" style="font-size:12px;">기준연도</label>
+        <select id="divYearSel" style="width:auto;">${yearOpts.join('')}</select>
+        <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;"><input type="checkbox" id="divShowEnded" style="width:auto;" ${divShowEnded ? 'checked' : ''}> 유효종료 포함</label>
         <button class="btn btn-primary" id="addBtn">+ 본부 추가</button>
       </div>
     </div>
     <div class="table-wrap"><table class="data" id="divTable">
-      <thead><tr><th style="width:36px;"></th><th>코드</th><th>본부명</th><th>유효기간</th><th>정렬</th><th>활성</th><th></th></tr></thead>
+      <thead><tr><th style="width:36px;"></th><th>코드</th><th>본부명</th><th>유효기간</th><th>상태</th><th class="num">총인원(재직)</th><th></th></tr></thead>
       <tbody id="divDragBody">${list.map(d => {
-        const valid = !divCheckYear || isDivisionValidForYear(d, divCheckYear);
-        const dim = divCheckYear && !valid ? ' style="opacity:.4;"' : '';
-        const yearBadge = divCheckYear
-          ? (valid ? '<span class="badge badge-수주완료">유효</span>' : '<span class="badge badge-수주실패">미유효</span>')
-          : '';
+        const st = statusOf(d);
+        const dim = st.key === 'valid' ? '' : ' style="opacity:.55;"';
+        const cnt = headcount[d.id] || 0;
+        const cntCell = cnt
+          ? `<span class="div-headcount" data-did="${d.id}" data-nm="${esc(d.name)}" title="소속 인원 보기" style="cursor:pointer;color:#2563eb;text-decoration:underline;font-weight:600;">${cnt}명</span>`
+          : '<span class="text-muted">0명</span>';
         return `
         <tr data-id="${d.id}" draggable="true" class="drag-row"${dim}>
-          <td class="drag-handle" title="드래그하여 이동">⠿</td>
-          <td>${d.code}</td>
-          <td>${d.name} ${yearBadge}</td>
+          <td class="drag-handle" title="드래그하여 이동" style="cursor:grab;">⠿</td>
+          <td>${esc(d.code || '')}</td>
+          <td>${esc(d.name)}</td>
           <td>${divisionValidLabel(d)}</td>
-          <td class="sort-val">${d.sort_order ?? 0}</td>
-          <td>${d.active ? '<span class="badge badge-수주완료">활성</span>' : '<span class="badge badge-수주실패">비활성</span>'}</td>
+          <td>${st.label}</td>
+          <td class="num">${cntCell}</td>
           <td class="actions">
             <button class="btn btn-sm" data-edit="${d.id}">수정</button>
             <button class="btn btn-sm btn-danger" data-del="${d.id}">삭제</button>
           </td>
-        </tr>`; }).join('') || `<tr><td colspan="7" class="empty">등록된 본부가 없습니다.</td></tr>`}
+        </tr>`; }).join('') || `<tr><td colspan="7" class="empty">표시할 본부가 없습니다.</td></tr>`}
       </tbody></table></div>`;
+  body.querySelector('#divYearSel').onchange = (e) => { divYear = Number(e.target.value); loadDivisions(); };
+  body.querySelector('#divShowEnded').onchange = (e) => { divShowEnded = e.target.checked; loadDivisions(); };
   body.querySelector('#addBtn').onclick = () => editDivision(null);
-  body.querySelector('#divCheckYear').onchange = (e) => { divCheckYear = e.target.value; loadDivisions(); };
   body.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => editDivision(b.dataset.edit));
   body.querySelectorAll('[data-del]').forEach(b => b.onclick = () => delItem('/api/masters/divisions/' + b.dataset.del, loadDivisions));
+  body.querySelectorAll('.div-headcount').forEach(b => b.onclick = () => showDivisionMembers(Number(b.dataset.did), b.dataset.nm));
   bindDivisionDrag();
 }
 
+// 드래그로 본부 순서 변경 → sort_order 저장 (화면에 안 보이는 본부는 기존 순서 유지)
 function bindDivisionDrag() {
   const tbody = document.getElementById('divDragBody');
   if (!tbody) return;
   let dragEl = null;
-
   tbody.querySelectorAll('tr.drag-row').forEach(tr => {
     tr.addEventListener('dragstart', () => { dragEl = tr; tr.classList.add('dragging'); });
-    tr.addEventListener('dragend', () => {
-      tr.classList.remove('dragging');
-      tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
-      dragEl = null;
-    });
+    tr.addEventListener('dragend', () => { tr.classList.remove('dragging'); tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over')); dragEl = null; });
     tr.addEventListener('dragover', (e) => {
       e.preventDefault();
       if (!dragEl || dragEl === tr) return;
@@ -95,15 +111,16 @@ function bindDivisionDrag() {
     });
     tr.addEventListener('drop', (e) => e.preventDefault());
   });
-
   tbody.addEventListener('drop', async () => {
     tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-over'));
-    const ids = Array.from(tbody.querySelectorAll('tr.drag-row')).map(r => Number(r.dataset.id));
-    // 화면상 정렬값 즉시 갱신
-    tbody.querySelectorAll('tr.drag-row').forEach((r, i) => {
-      const cell = r.querySelector('.sort-val');
-      if (cell) cell.textContent = i + 1;
-    });
+    const visibleIds = Array.from(tbody.querySelectorAll('tr.drag-row')).map(r => Number(r.dataset.id));
+    // 화면에 보이는 본부는 새 순서로, 숨겨진(필터된) 본부는 기존 sort_order 순서로 뒤에 유지
+    const visibleSet = new Set(visibleIds);
+    const hiddenIds = _allDivs.slice()
+      .filter(d => !visibleSet.has(d.id))
+      .sort((a, b) => ((a.sort_order ?? 0) - (b.sort_order ?? 0)) || (a.id - b.id))
+      .map(d => d.id);
+    const ids = [...visibleIds, ...hiddenIds];
     try {
       await api.post('/api/masters/divisions/reorder', { ids });
       divisionsCache = null;
@@ -114,25 +131,42 @@ function bindDivisionDrag() {
     }
   });
 }
+
+// 총인원 클릭 → 소속 직원 상세 리스트
+function showDivisionMembers(divId, divName) {
+  const members = _divUsers.filter(u => u.active && u.division_id === divId)
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'));
+  const rows = members.map(u => `
+    <tr>
+      <td style="font-variant-numeric:tabular-nums;">${esc(u.employee_number || '')}</td>
+      <td>${esc(u.name)}</td>
+      <td>${esc(u.position || '')}</td>
+      <td>${esc(u.team || '')}</td>
+      <td style="font-size:12px;">${esc(u.hire_date || '')}</td>
+    </tr>`).join('') || `<tr><td colspan="5" class="empty">소속 인원이 없습니다.</td></tr>`;
+  openModal(`${esc(divName)} · 소속 인원 ${members.length}명`, `
+    <div class="table-wrap" style="max-height:460px;overflow:auto;"><table class="data">
+      <thead><tr><th>사원번호</th><th>이름</th><th>직급</th><th>팀</th><th>입사일</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`, () => true, { saveText: '확인' });
+}
 async function editDivision(id) {
   const item = id ? await api.get('/api/masters/divisions/' + id) : { code: '', name: '', sort_order: 0, active: 1, valid_from: '', valid_to: '' };
   openModal(id ? '본부 수정' : '본부 추가', `
     <div class="grid-form">
       <div class="form-row"><label class="required">코드</label><input id="m_code" value="${item.code || ''}"></div>
       <div class="form-row"><label class="required">본부명</label><input id="m_name" value="${item.name || ''}"></div>
-      <div class="form-row"><label>정렬</label><input id="m_sort" type="number" value="${item.sort_order ?? 0}"></div>
-      <div class="form-row"><label>활성</label><select id="m_active"><option value="1" ${item.active ? 'selected' : ''}>활성</option><option value="0" ${!item.active ? 'selected' : ''}>비활성</option></select></div>
       <div class="form-row"><label>유효 시작연도</label><input id="m_vfrom" type="number" placeholder="제한 없음" value="${item.valid_from ?? ''}"></div>
       <div class="form-row"><label>유효 종료연도</label><input id="m_vto" type="number" placeholder="제한 없음" value="${item.valid_to ?? ''}"></div>
     </div>
-    <p class="text-muted" style="font-size:12px;margin-top:8px;">· 연도를 비워두면 제한 없음(전 기간 유효)입니다. 예) 2024년 신설·2026년 폐지 → 시작 2024 / 종료 2025</p>`, async (m) => {
+    <p class="text-muted" style="font-size:12px;margin-top:8px;">· 연도를 비워두면 제한 없음(전 기간 유효)입니다. 유효 종료연도가 지난 본부는 목록에서 자동으로 숨겨집니다. 예) 2024년 신설·2026년 폐지 → 시작 2024 / 종료 2025</p>`, async (m) => {
     const vf = m.querySelector('#m_vfrom').value.trim();
     const vt = m.querySelector('#m_vto').value.trim();
     const body = {
       code: m.querySelector('#m_code').value.trim(),
       name: m.querySelector('#m_name').value.trim(),
-      sort_order: Number(m.querySelector('#m_sort').value || 0),
-      active: Number(m.querySelector('#m_active').value),
+      sort_order: item.sort_order ?? 0,
+      active: item.active ?? 1,
       valid_from: vf === '' ? null : Number(vf),
       valid_to: vt === '' ? null : Number(vt)
     };
@@ -413,7 +447,7 @@ async function editEmployee(id, divs) {
     <div class="grid-form">
       <div class="form-row"><label class="required">사원번호</label><input id="e_empno" value="${esc(item.employee_number)}" placeholder="예: 060001"></div>
       <div class="form-row"><label class="required">이름</label><input id="e_name" value="${esc(item.name)}"></div>
-      <div class="form-row"><label class="required">ID(로그인/식별)</label><input id="e_username" value="${esc(item.username)}" placeholder="중복 불가"></div>
+      <div class="form-row"><label class="required">식별이름(중복방지용)</label><input id="e_username" value="${esc(item.username)}" placeholder="중복 불가"></div>
       <div class="form-row"><label>소속본부</label><input id="e_hq" value="${esc(item.hq)}" placeholder="예: 기술융합본부"></div>
       <div class="form-row"><label>팀</label><input id="e_team" value="${esc(item.team)}" placeholder="예: 디자인개발팀"></div>
       <div class="form-row"><label>집계본부</label><select id="e_div"><option value="">선택 안함</option>${divs.map(d=>`<option value="${d.id}" ${d.id==item.division_id?'selected':''}>${d.name}</option>`).join('')}</select></div>
@@ -496,7 +530,7 @@ async function editEmployee(id, divs) {
       role: 'user',
       is_login: 0
     };
-    if (!bodyData.username || !bodyData.name) { toast('ID와 이름은 필수입니다.', 'error'); return false; }
+    if (!bodyData.username || !bodyData.name) { toast('식별이름과 이름은 필수입니다.', 'error'); return false; }
     try {
       if (id) await api.put('/api/masters/users/' + id, bodyData);
       else await api.post('/api/masters/users', bodyData);
